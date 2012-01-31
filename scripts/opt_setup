@@ -1,0 +1,159 @@
+# opt_setup v3.02 -*- Perl -*-
+#
+# this will run all the scripts necessary to set up
+# the opt directory (opt_link, clean_it, and opt_depot).
+# For more details, see individual scripts.
+#
+#***********************************************************************
+# Copyright (C) 1993-2009  The University of Texas at Austin.
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+#    02111-1307, USA
+#
+#    Written by: Computer Science Division, Applied Research Laboratories,
+#    University of Texas at Austin  opt-depot@arlut.utexas.edu
+#
+#***********************************************************************
+# Written by Jeremy Thibeaux, Jonathan Abbey, Amy Shook
+# October 8, 1993 - June 1, 1997
+#
+# v2.0
+# Added a line to ignore labeled exclusions in the read_exfile procedure,
+# and to get directory paths from the common configuration file
+# Erik Grostic 15 May 1997
+#
+# v2.01
+# Fixed a bug in procargs that had to do with the regex matching for
+# re-defining the destination directory by using command line parameters.
+# A -b option must now be given with the destination (or base) directory
+# Erik Grostic 10 July 1997
+#
+# v3.0
+# Reworked opt_setup significantly to use $FindBin::RealBin and the
+# Opt_depot::Common modules to simplify opt_setup's code.  In addition,
+# opt_setup now does its own lock establishment and clearing, using
+# Opt_depot::Common logic.  It now passes the -s command line argument
+# to the constituent scripts which inhibits their use of locks, in favor
+# of the opt_setup lock.  opt_setup now runs opt_link twice, once at the start
+# of opt_setup processing to add new links from the site volume(s), and once
+# at the end to remove excluded links once opt_clean and opt_depot have had
+# a chance to run.
+# Jonathan Abbey 15 October 2003
+#
+# Release: $Name:  $
+# Version: $Revision: 1.19 $
+# Last Mod Date: $Date: 2009/12/09 00:30:40 $
+#
+##########################################################################
+
+$| = 1;
+
+use English;
+use FindBin qw($RealBin);
+
+use lib "$RealBin/../modules";
+use Opt_depot::Common;
+
+$version = "3.02";
+
+## defaults #########################################################
+
+# configuration file containing $dest, $depot and $logdir vars
+
+$local_config_file = resolve($RealBin, "../etc/opt.config");
+
+if (defined $ENV{'PERLLOC'}) {
+  $perlloc = $ENV{'PERLLOC'};
+} else {
+  $perlloc = undef;
+}
+
+################################################################################
+#                                                                              #
+#                                     MAIN                                     #
+#                                                                              #
+################################################################################
+
+$usage_string =<<'ENDUSAGE';
+Usage:  opt_setup [-vqgmnrR] [-f\"config file\"] [-d\"depot dir\"]
+                  [-l\"log dir\"] [-b \"software base directory\"]
+ENDUSAGE
+
+read_prefs($usage_string, $local_config_file, "gvqmnrR", @ARGV);
+
+init_log("opt_setup", $version);
+
+$localpath = "$RealBin";
+$localpath = removelastslash($localpath);
+
+if (!check_lock("opt_setup")) {
+  logprint("Can't create lockfile, aborting\n", 1);
+  exit(1);
+}
+
+# MAIN PROCESS
+
+$file_string = "-f$config_file -d$depot -l$logfile -b$dest";
+
+# the -s flags are to specify that the scripts are being run from
+# opt_setup, and so don't need to do their own lock handling
+
+# first run opt_link with the -a option so that we inhibit link removal
+
+if (defined $perlloc) {
+  $link_exec = "$perlloc $localpath/opt_link -s -a $switches{'g'} $switches{'v'} " .
+    "$switches{'q'} $switches{'n'} $file_string";
+} else {
+  $link_exec = "$localpath/opt_link -s -a $switches{'g'} $switches{'v'} " .
+    "$switches{'q'} $switches{'n'} $file_string";
+}
+
+!system($link_exec) || die "opt_link failed";
+
+if (defined $perlloc) {
+  $clean_exec = "$perlloc $localpath/opt_clean -s $switches{'v'} " .
+    "$switches{'q'} $switches{'r'} $switches{'R'} $file_string";
+} else {
+  $clean_exec = "$localpath/opt_clean -s $switches{'v'} " .
+    "$switches{'q'} $switches{'r'} $switches{'R'} $file_string";
+}
+
+!system($clean_exec) || die "opt_clean failed";
+
+if (defined $perlloc) {
+  $depot_exec = "$perlloc $localpath/opt_depot -s $switches{'m'} $switches{'v'} " .
+    "$switches{'q'} $switches{'r'} $switches{'R'} $swithces{'n'} $file_string";
+} else {
+  $depot_exec = "$localpath/opt_depot -s $switches{'m'} $switches{'v'} " .
+    "$switches{'q'} $switches{'r'} $switches{'R'} $switches{'n'} $file_string";
+}
+
+!system($depot_exec) || die "opt_depot failed";
+
+# finally run opt_link without the -a option so that we can remove any
+# depot links, once opt_clean and opt_depot have safely been run.
+
+if (defined $perlloc) {
+  $link_exec = "$perlloc $localpath/opt_link -s $switches{'g'} $switches{'v'} " .
+    "$switches{'q'} $switches{'n'} $file_string";
+} else {
+  $link_exec = "$localpath/opt_link -s $switches{'g'} $switches{'v'} " .
+    "$switches{'q'} $switches{'n'} $file_string";
+}
+
+!system($link_exec) || die "opt_link failed";
+
+clear_lock();
+close_log();

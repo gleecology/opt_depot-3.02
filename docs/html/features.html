@@ -1,0 +1,91 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+<HEAD>
+   <TITLE>Opt_depot 2.0 Features
+   </TITLE>
+   <META NAME="GENERATOR" CONTENT="Mozilla/3.01Gold (X11; I; SunOS 5.5.1 sun4d) [Netscape]">
+</HEAD>
+<BODY TEXT="#000000" BGCOLOR="#C0C0C0" LINK="#B22222" VLINK="#000080" ALINK="#FFFFFF" BACKGROUND="images/chalk.gif">
+
+<CENTER><TABLE BORDER=15 CELLSPACING=0 CELLPADDING=0 HEIGHT="15%" >
+<TR>
+<TD><FONT SIZE=+4>&nbsp;Opt_depot <FONT COLOR="#B22222">2.0</FONT> Features
+</FONT></TD>
+</TR>
+</TABLE></CENTER>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H3>Multiple Package Archives</H3>
+
+<P>Opt_depot now supports multiple package archives. This means that opt_link
+is able to scan several archive directories looking for software to link
+into the depot directory. The archives may be ordered into a prioritized
+hierarchy.</P>
+
+<P>See the <A HREF="opt_link2.0.html">opt_link 2.0</A> page for more details</P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H3>Dynamic Exclusion Handling in opt_link</H3>
+
+<P>Because the new version of opt_link calculates exclusions at run time,
+the primary .exclude file no longer has to contain past exclusions -- only
+current exclusions need to be present, making it considerably easier to
+manage.</P>
+
+<H3>
+<HR WIDTH="100%"></H3>
+
+<H3>Recursive linking and cleaning</H3>
+
+<P>Opt_depot and opt_clean have been modified to create sub-directories
+under /bin/lib/include/info/man to help deal with file conflicts. If two
+packages have files that share a common directory. and if these files both
+have clearance to be linked by opt_depot, then opt_depot will create a
+sub-directory so that both packages can have links to both package's files
+built.</P>
+
+<P>Before, earlier versions of opt_depot could only build links to a single
+package's files in the case of file conflicts.</P>
+
+<H3>
+<HR WIDTH="100%"></H3>
+
+<H3>Setup.sh</H3>
+
+<P>A shell script has been developed to help facilitate the process of
+installing opt_depot on the system. The setup program is designed to support
+several types of environments, ranging a home linux setup to the situation
+where the opt_depot scripts are shared access an entire network.</P>
+
+<P>Opt_depot now uses a common configuration file to provide the locations
+of the depot, software base and log directory. This file, called opt.config,
+can be created by the setup.sh script. Setup.sh also calls the modify_archives
+utility program, which helps create and maintain the `sites' file that
+is used by opt_link.</P>
+
+<H3>
+<HR WIDTH="100%"></H3>
+
+<H3>Fluffy</H3>
+
+<P>Where would opt_depot be without an official mascot? </P>
+
+<P><A HREF="fluffy.html">Fluffy</A> represents the best and worst in all
+opt_depot developers; it is an extension of our highest aprirations and
+our basest desires. </P>
+
+<P>May the grace of Fluffy guide and protect you in your journey through
+the ever-changing world of opt_depot.</P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<ADDRESS><A HREF="mailto:opt-depot@mail.utexas.edu">opt-depot@mail.utexas.edu</A>
+-- Last Updated 20 May 1997</ADDRESS>
+
+</BODY>
+</HTML>

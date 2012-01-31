@@ -1,0 +1,213 @@
+#
+# opt_nuke v3.02 -*- Perl -*-
+#
+# This is a perl script that will find all the links under
+# $dest and removes them if they point to a file under
+# $depot regardless of whether or not that file exists or
+# not. It will not check under $depot for links, nor
+# remove the links in $depot pointing to the package archives.
+#
+#************************************************************************
+#
+# Copyright (C) 1993-2009  The University of Texas at Austin.
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+#    02111-1307, USA
+#
+#    Written by: Computer Science Division, Applied Research Laboratories,
+#    University of Texas at Austin  opt-depot@arlut.utexas.edu
+#
+#***********************************************************************
+# Written by Jeremy Thibeaux, Jonathan Abbey, Amy Shook
+# October 8, 1993 - June 1, 1997
+#
+# v2.0
+# Can now read from the opt,config file to get $dest, $depot and
+# $logdir paths
+# Erik Grostic 15 May 1997
+#
+# v2.01
+# Fixed a bug in procargs that had to do with the regex matching for
+# re-defining the destination directory by using command line parameters.
+# A -b option must now be given with the destination (or base) directory
+# Erik Grostic 10 July 1997
+#
+# v3.0
+# Significant rework.. dropped a lot of code in favor of using the
+# centralized routines in Opt_depot::Common
+# Jonathan Abbey 31 July 2003
+#
+# Release: $Name:  $
+# Version: $Revision: 1.10 $
+# Last Mod Date: $Date: 2009/12/09 00:30:40 $
+#
+#####################################################################
+
+use English;
+use FindBin qw($RealBin);
+
+use lib "$RealBin/../modules";
+use Opt_depot::Common;
+
+$version = "3.02";
+
+## defaults #########################################################
+
+# configuration file containing $dest, $depot and $logdir vars
+
+$config_file = resolve($RealBin, "../etc/opt.config");
+
+#########################################################################
+#
+#                                                                is_under
+#
+# input: $dir - absolute directory where the link to be tested is
+#        $link - readlink result string for a symlink in $dir
+#        $test_dir - absolute directory that $dir/$link's target might
+#                    or might not be contained under
+#
+# output: 1 if the target of the symbolic link $link in absolute
+#         directory $dir is under the absolute directory $test_dir
+#
+#########################################################################
+
+sub is_under {
+  my ($dir, $link, $test_dir)= @_;
+
+  my (@alinkp,@dirp,@linkp,$d);
+
+  # make array representations of
+  # the current directory and symbolic link
+
+  # if we have a leading / in our $dir or $link,
+  # we'll need to shift to get rid of the leading
+  # empty array element
+
+  @dirp=split(/\//, $dir);
+  shift(@dirp) if (!($dirp[0]));
+  @linkp=split(/\//, $link);
+  shift(@linkp) if (!($linkp[0]));
+
+  # @alinkp is an array that we will build to contain the absolute
+  # link target pathname.  If the link does not begin with a /, it is
+  # a relative link, and we need to place our current directory into
+  # the @alinkp array.
+
+  if ($link !~ /^\//) {
+    @alinkp=@dirp;
+  }
+
+  # modify the @alinkp array according
+  # to each path component of the @linkp array
+  # (an array representation of the symbolic link
+  # given to us), to arrive at the ultimate absolute
+  # pathname of the symbolic link
+
+  $d=shift(@linkp);
+
+  while ($d) {
+    if ($d eq "..") {
+      pop(@alinkp);
+    }
+    elsif ($d ne ".") {
+      push(@alinkp, $d);
+    }
+
+    $d=shift(@linkp);
+  }
+
+  $"='/';
+  $alinkp="/@alinkp";
+
+  # returns true if under $test_dir
+  if ($alinkp =~ /^$test_dir\//) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+#########################################################################
+#
+#                                                                nukedirs
+#
+# input: $dir - directory to scan
+#
+# uses: $depot - global variable
+#
+# output: removes all symbolic links from under $dir that point
+#         to a location under $depot
+#
+# NOTE: nukedirs() is recursive
+#
+#########################################################################
+sub nukedirs {
+  my ($dir)= @_;
+
+  my (@dirs, $dirs, @links, $link, $where, @contents);
+
+  opendir(DIR, "$dir") || die "Could not open $dir";
+  @contents = readdir(DIR);
+  closedir(DIR);
+
+  @links = grep (-l "$dir/$_", @contents);
+  @dirs = grep (!/^\.\.?$/ && !(-l "$dir/$_") && (-d _), @contents);
+
+  # note that we do -d _ above as an optimization, so that perl doesn't
+  # go and stat $dir/$_ a second time when it already has the
+  # stat info from the -l check that it had to do immediately before..
+
+  # remove links
+
+  for $link (@links) {
+    $where=readlink("$dir/$link");
+
+    # &is_under() checks to see if the
+    # target of $dir/$link points to a location under $depot
+
+    if (is_under($dir, $where, $depot)) {
+      unlink("$dir/$link");
+      logprint("  removed $dir/$link -> $where\n", 0);
+    }
+  }
+
+  # check the directories in this directory
+  #
+  # we don't want to scan down into /opt/depot
+
+  for $dirs (@dirs) {
+    if ("$dir/$dirs" ne $depot) {
+      nukedirs("$dir/$dirs");
+    }
+  }
+}
+
+################################################################################
+#                                                                              #
+#                                     MAIN                                     #
+#                                                                              #
+################################################################################
+
+$usage_string =<<'ENDUSAGE';
+Usage:  opt_nuke [-vq] [-f\"config file\"] [-d\"depot dir\"]
+                 [-l\"log directory\"] [\b\"base directory\"]
+ENDUSAGE
+
+read_prefs($usage_string, $config_file, "vq", @ARGV);
+init_log("opt_nuke", $version);
+
+nukedirs($dest); # go to base directory and remove the links
+
+close_log();

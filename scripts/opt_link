@@ -1,0 +1,769 @@
+# opt_link 3.02 -*- Perl -*-
+#
+# This is a perl script that will create links from the $depot directory to
+# the software packages contained in the central package archives. There
+# may be multiple archive directories, all of which are listed in a 'sites'
+# file.
+#
+#***********************************************************************
+#
+# Copyright (C) 1993-2009  The University of Texas at Austin.
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+#    02111-1307, USA
+#
+#    Written by: Computer Science Division, Applied Research Laboratories,
+#    University of Texas at Austin  opt-depot@arlut.utexas.edu
+#
+#***********************************************************************
+# Written by Jeremy Thibeaux, Jonathan Abbey, Amy Shook
+# October 8, 1993 - June 1, 1997
+#
+# v2.0
+# Gutted it like so much cheap mackerel, then added dynamic exclusion
+# handling, multiple package archive support, and the ability to use
+# a common configuration file.
+# Erik Grostic 15 May 1997
+#
+# v2.01
+# Changed all the other scripts, but opt_link has a better argument processing
+# system so I didn't have to fiddle with it.
+# Erik Grostic 10 July 1997
+#
+# Fixed a problem with removing links from the depot directory when
+# running opt_link from a directory other than depot itself
+# Erik Grostic 17 July 1997
+#
+# v3.0
+# Reworked a lot of code to use the new perl 5 features, and the
+# Opt_depot::Common module.  Added support for the -a command line
+# flag to inhibit depot link removal.
+# Jonathan Abbey 14 October 2003
+#
+# Release: $Name:  $
+# Version: $Revision: 1.26 $
+# Last Mod Date: $Date: 2009/12/09 00:30:40 $
+#
+#####################################################################
+
+use English;
+use FindBin qw($RealBin);
+
+use lib "$RealBin/../modules";
+use Opt_depot::Common;
+
+$version = "3.02";
+
+$activity = 0;
+
+##defaults#############################################################
+
+# configuration file containing $dest, $depot and $logdir vars
+
+$local_config_file = resolve($RealBin, "../etc/opt.config");
+
+# The global variable $test is used with the -n command line option.
+# If it is true, then no actual linking or removal is performed
+
+$test = 0;
+
+#####################################################################
+#
+#                                                         read_exfile
+# input: * $exfile - file containing exclusion information
+#
+# output:* %excluded - contains the manually excluded packages
+#        * %excluded_by - keeps track of the excluded packages and
+#                         what they have been excluded by
+#
+#####################################################################
+
+sub read_exfile {
+  my ($excludefile) = @_;
+
+  if (!-e $excludefile) {
+    return;
+  }
+
+  open(EXCLUDEFILE,"$excludefile") || die "Could not open $excludefile \n";
+
+  while (<EXCLUDEFILE>) {
+    s/\s+$//;			# cut off trailing whitespace
+    s/^\s+//;			# cut off leading whitespace
+
+    if (/^$/ || /^\s*#/) {
+      next;
+    }
+
+    if (/^\'/ || /^\"/) {
+      $_ = parsequoted($_,0);	# leave in escapes
+
+      if (!/^(?:\\.|[^:])*$/) {
+	# aha, we've got an unescaped colon.. assume it's
+	# the first one and use it to split the string
+
+	if (/^([^:]+):(.*)/) {
+	  $label = $1;
+	  $pathname = $2;
+
+	  $pathname =~ s/\\(.)/$1/g; # take out backslash escapes
+
+	  $temp = $depot;
+	  $temp =~ s/(\W)/\\$1/g;	# backslash escape any special chars
+	  $pathname =~ s/^$temp\/(.*)/$1/;	# strip off leading depot path, if found
+
+	  $_ = "$label:$pathname";
+	}
+      }
+    } else {
+      if (/^([^:]+):(.*)/) {
+	$label = $1;
+	$pathname = $2;
+
+	if ($pathname =~ /^\s*\'/ || /^\s*\"/) {
+	  $pathname = parsequoted($pathname, 1); # process quoted escapes
+	} else {
+	  $pathname =~ s/\\(.)/$1/g; # take out backslash escapes
+	}
+
+	$temp = $depot;
+	$temp =~ s/(\W)/\\$1/g;	# backslash escape any special chars
+	$pathname =~ s/^$temp\/(.*)/$1/;	# strip off leading depot path, if found
+
+	$_ = "$label:$pathname";
+      }
+      s/\\(.)/$1/g;		# process escapes
+    }
+
+    if (/\//) {
+      # if we've got a slash in the name, don't exclude it,
+      # we're just interested in full package exclusion
+      next
+    } else {
+      # These manually excluded packages have priority over all other
+      # exclusions, so we set priority to 0
+
+      $excluded{$_} = 0;
+      $excluded_by{$_} = "Manual Exclusion";
+    }
+  }
+
+  close (EXCLUDEFILE);
+} # read_exfile
+
+#####################################################################
+#
+#                                                      read_site_file
+#
+# input:  * $site_file - file containing site/label information
+#
+# output: * %priority - A listing of all the labels and their priorities
+#         * @sites - All the labels included in the $sites file in order
+#                  of priority.
+#         * %sitedirs - The package directories and their associated labels
+#
+#####################################################################
+
+sub read_site_file {
+  my ($sitefile) = @_;
+  my ($label, $tmpstr);
+
+  # no site file?  okay, skip it
+
+  if (!-e $sitefile) {
+    return 0;
+  }
+
+  # we're going to loop over the site file, reading label/path pairs.
+  # we'll store this information in the %sitedirs and %priority
+  # hashes.. a given label is mapped to its priority in the %priority
+  # hash.  lower integer priority values translate to a higher
+  # priority level.. we give higher priority levels to the sites that
+  # are listed earlier in the site file.
+
+  my $i = 1;
+
+  open(SITEFILE,"$sitefile") || die "Could not open $sitefile \n";
+
+  while (<SITEFILE>) {
+    s/\s+$//;
+
+    if (/^$/ || /^\s*#/) {
+      next;
+    }
+
+    if (/^\s*(\S+)\s*(.+)/) {
+      $label = $1;
+
+      # now, really, we can't have a colon in the site labels or the
+      # label:package syntax in .exclude and .priority files will fail.
+
+      if ($label =~ /:/) {
+	die("Error, $sitefile contains a site label ($label) which contains a colon\n");
+      }
+
+      $tmpstr = $2;
+
+      if ($tmpstr =~ /^\'/ || $tmpstr =~ /^\"/) {
+	$tmpstr = parsequoted($tmpstr,1); # process escapes
+      }
+
+      $tmpstr=removelastslash($tmpstr);
+      push(@sites,$tmpstr);	# we add these in descending priority
+      $sitedirs{$tmpstr} = $label;
+      $priority{$label} = $i;
+      $i++;
+    }
+  }
+
+  close(SITEFILE);
+} # read_site_file
+
+#####################################################################
+#
+#                                                          scan_depot
+# input: * the depot directory
+#
+# uses:  * @sites array
+#        * %priority array
+#
+# output: * %installed - contains a listing of all the packages currently
+#           installed in the $depot directory. Physically installed
+#           packages (ie non-symbolic links) have priority over all others
+#
+#
+#####################################################################
+
+sub scan_depot {
+  my ($depotdir) = @_;
+
+  my (@allpackages,@optlinks);
+  my ($prev_link,$prev_site,$link,$package);
+
+  opendir(OPT,"$depotdir") || logprint("could not open $depotdir", 1);
+  @allpackages = grep (-d "$depotdir/$_" && !/^\.\.?$/, readdir OPT);
+  rewinddir(OPT);
+  @optlinks = grep (-l "$depotdir/$_", readdir OPT); # read in links only
+  closedir(OPT);
+
+  foreach $package (@allpackages) {
+    # set default priority of package to 0.
+    # We'll check against @optlinks in a second
+    $installed{$package} = 0;
+  }
+
+  foreach $link (@optlinks) {
+    $prev_link = resolve($depotdir, readlink("$depotdir/$link"));
+
+    if (!-e $prev_link) {	# clean up links to non-existing packages
+      logprint("Removing $depotdir/$link link to non-existent package\n", 1);
+
+      if (!$test) {
+	unlink("$depotdir/$link") || logprint("Could not unlink $depotdir/$link\n", 1);
+	delete $installed{$link};
+      }
+    } else {
+      # get the path to the site that the package was linked from
+
+      $prev_site = extractdir($prev_link);
+
+      if (defined $sitedirs{$prev_site}) {
+	$prev_installed{$link} = $priority{$sitedirs{$prev_site}};
+
+	# we've accounted for this link, and we know we can regenerate
+	# or unmake it according to our priority and exclusion
+	# files.. take it out of the list we generated of
+	# directories/directory links under $depotdir.
+
+	delete $installed{$link};
+      } else {
+	logprint("Package $link is linked to an undefined site $prev_site\n", 1);
+      }
+    }
+  }
+} # scan_depot
+
+#####################################################################
+#
+#                                                       process_sites
+# input: none
+#
+# uses:  * @sites array
+#        * %priority hash
+#        * %excluded hash
+#        * %installed hash
+#
+# output: %installed contains the packages which should be installed,
+#         and %excluded contains the packages which are to be excluded
+#
+#####################################################################
+
+sub process_sites {
+  my (@allpacks,$pack_priority,$pack_exclude,$pack,$tempsite);
+
+  # the site volumes are ordered by priority in the @sites array, so
+  # we are starting with the highest-priority site volume and working
+  # our way down
+
+  foreach $tempsite (@sites) {
+    $sitelabel = $sitedirs{$tempsite}; # stores the corresponding label
+    $pack_priority = $priority{$sitelabel}; # priority of site volume
+
+    opendir(PACKSITE,"$tempsite")|| logprint("Could not open directory $tempsite\n", 1);
+    @allpacks = grep (-d "$tempsite/$_" && !/^\.\.?$/, readdir PACKSITE);
+    closedir(PACKSITE);
+
+    foreach $pack (@allpacks) {
+      $pack_exclude = "$tempsite/$pack/.exclude";
+
+      if (defined $excluded{$pack}) { # package's generic name excluded
+
+	# if this package was excluded by another package's exclude
+	# file (the exclude value is greater than zero), we'll assume
+	# that that exclusion was due to another package of more
+	# recent vintage excluding an older version.  If the exclusion
+	# value is zero, then the package was specifically excluded in
+	# the root .exclude file.. in this case, we'll assume it's a
+	# configuration choice rather than a version thing, so we
+	# won't make the call to process the excluded package's
+	# transitive exclusions
+
+	if ($excluded{$pack} > 0) {
+	  # the call to chk_pack_ex adds the packages exclusions to
+	  # the exclusion hash, retaining the transitive property
+	  # of exclusions
+
+	  chk_pack_ex($pack,$pack_exclude,$pack_priority);
+	}
+
+	next;
+      }
+
+      if (defined $excluded{"$sitelabel:$pack"}) { # ex is site specific
+	next;
+      }
+
+      if (chk_pack_ex($pack,$pack_exclude,$pack_priority)) {
+	install_package($pack,$pack_priority);
+      }
+    }
+  }
+} # process_sites
+
+#####################################################################
+#
+#                                                         chk_pack_ex
+# input: $packname - name of the package to be added
+#                    to %installed
+#        $packex - the name of the package's exclusion file
+#        $priort - the package's priority
+#
+# uses:  * %pack_exclusions array - the list of a package's exclusions
+#        * %excluded - contains a listing of package exclusions
+#        * %installed - contains the packages which should be installed
+#
+# output: returns 0 if there is a conflict with the package's exclusion
+#         list and what is already installed, otherwise returns 1
+#         indicating it's ok to add the package to the %installed hash
+#         Also, a package which is cleared for installation will have the
+#         contents of its .exclude file added to the %excluded hash
+#
+#####################################################################
+
+sub chk_pack_ex {
+  my ($packname,$packex,$priort) = @_;
+
+  my (@pack_exclusions, $package);
+
+  if (!-e $packex) {
+    return 1;
+  }
+
+  open(PACKEX,"$packex") || logprint("Error: Could not open $packex\n", 1);
+
+  while (<PACKEX>) {
+    s/\s+$//;			# cut off trailing whitespace
+
+    if (/^$/ || /^\s*#/) {
+      next;
+    }
+
+    if (/^\s*\'/ || /^\s*\"/) {
+      $_ = parsequoted($_, 1); # process escapes
+    }
+
+    if (/\//) {
+      # if we've got a slash in the name, don't exclude it,
+      # we're just interested in package exclusion
+      next;
+    }
+
+    push(@pack_exclusions, $_);
+  }
+
+  close(PACKEX);
+
+  # if $get_most_recent is set, we have to ignore the fact that one site
+  # volume has a higher priority (was listed earlier) in the sites file..
+
+  # if $get_most_recent is not set, however, we're going to look to see
+  # if a given package has already been installed from a site volume with
+  # higher priority, in which case we have to forget about the $packname
+  # chk_pack_ex() was called on being installed
+
+  if (!$get_most_recent) {
+    foreach $package (@pack_exclusions) {
+      # check to see that each is not already installed
+      # from a higher priority package site
+
+      if (defined $installed{$package} && $installed{$package} < $priort) {
+	# the package cannot exclude another which has a higher (lower
+	# integer value) priority - therefore we can't install it
+
+	logprint("## Priority Conflict: could not install $packname\n", 1);
+	logprint("\tCould not exclude $package\n", 1);
+
+	# remove this if it's currently linked
+	$excluded{$packname} = $priort;
+
+	return 0; # we must not install this bad, BAD package.
+      }
+    }
+  }
+
+  foreach $package (@pack_exclusions) {	
+    # since there are no conflicts we can add these packages to the
+    # exclusions to hash
+
+    $excluded{$package} = $priort; # add to exclusion hash
+
+    if (! defined $excluded_by{$package}) {
+      $excluded_by{$package} = $packname;
+    }
+
+    if (defined $installed{$package}) {
+      delete $installed{$package};# if it's in the installed hash remove it
+    }
+  }
+
+  return 1;
+}
+
+#####################################################################
+#
+#                                                     install_package
+#
+# This subroutine is used to record a priority value for a package to
+# be installed in the depot directory, if and only if there is not
+# already a package by that name installed from a non site volume
+# source.
+#
+# This information is stored in the global %installed hash.
+#
+#####################################################################
+
+sub install_package {
+  my ($packname,$pack_priority) = @_;
+
+  unless (defined $installed{$packname}) {
+    $installed{$packname} = $pack_priority;
+  }
+}
+
+#####################################################################
+#
+#                                                             link_me
+# input: none
+#
+# uses:  * @sites array
+#        * %installed hash
+#        * $depot directory name
+#
+# output: checks if all the entries in the installed hash are linked
+#         and creates links if necessary
+#
+#####################################################################
+sub link_me {
+  my ($pack,$newlink,$oldlink);
+
+  foreach $pack (keys %installed) {
+
+    if ($installed{$pack} == 0) {
+      next;			# skip a physically installed package
+    }
+
+    # XXX is it necessary to have this assumption that the priority
+    # value mapped to in %installed is directly correlated to the site
+    # volume?  Need to look over all the code in opt_link and verify
+    # that that relation reliably holds. XXX
+
+    # XXX might be better to do a direct mapping from package name to
+    # the site directory it was linked from.. ? XXX
+
+    $newlink = $sites[$installed{$pack} - 1]; # what the site should be
+
+    if (-l "$depot/$pack") {
+      # A link exists. Check it.
+
+      $oldlink = extractdir(resolve($depot, readlink("$depot/$pack")));
+
+      if ($oldlink ne $newlink) {
+	# if the link is not from the site it's supposed to be from
+	# then remove it and replace with the correct link
+
+	logprint("Replacing link $oldlink/$pack with $newlink/$pack\n", 1);
+
+	if (!$test) {
+	  unlink "$depot/$pack" || logprint("Could not unlink $oldlink/$pack\n", 1);
+	  symlink ("$newlink/$pack","$depot/$pack") || logprint("Could not link $newlink/$pack to $depot/$pack\n", 1);
+	}
+
+	$activity = 1; # yes, we've actually done something
+      }
+    } else {
+      # No old link to remove. Just make the new one
+
+      if (!$test) {
+	symlink ("$newlink/$pack","$depot/$pack") || logprint("Could not link $newlink/$pack to $depot/$pack\n", 1);
+      }
+
+      $activity = 1; # Self destruct enabled.
+    }
+  }
+} # link_me
+
+#####################################################################
+#
+#                                                          exclude_me
+# input: none
+#
+# uses:  * @sites array
+#        * %priority hash
+#        * %excluded hash
+#
+# output: checks if the links to excluded packages exist and
+#         removes them if they do
+#
+#####################################################################
+sub exclude_me {
+  my ($ex_pack,$label,$ex_site,$ex_priority,$link_site);
+
+  foreach $ex_pack (keys %excluded) {
+    if ($ex_pack =~ /^\s*([^:]+):(.+)/) {
+      # exclusion is in the form of <label>:<package>
+      $label = $1;
+      $ex_pack = $2;
+      $ex_priority = $priority{$label};
+    } else {
+      $label = "";
+      $ex_priority = $excluded{$ex_pack};
+    }
+
+    if (-l  "$depot/$ex_pack") {
+      # if the link exists then remove it
+
+      if ($ex_priority == 0) {
+	# Ah, a generic exclusion - let the blood orgy begin
+
+	# but only if the link points to a site volume we've got
+	# defined in our sites file.. if we find a package name in the
+	# exclude file that we wouldn't link if it wasn't there, we
+	# won't be responsible for removing it.
+
+	$link_site = extractdir(resolve($depot, readlink("$depot/$ex_pack")));
+
+	if (defined $sitedirs{$link_site}) {
+	  if (!$test && !$add_only) {
+	    unlink ("$depot/$ex_pack");
+	  }
+
+	  $activity = 1; # Record this dark and foreboding event
+	}
+      } else {
+	# it's not a manual exclusion - check it out
+
+	$ex_site = $sites[$ex_priority - 1];
+	$link_site = extractdir(resolve($depot, readlink("$depot/$ex_pack")));
+
+	if (($ex_site eq $link_site)|| ($label eq "")) {
+
+	  # You might ask yourself, what are we testing here? In the
+	  # case of a labeled exclusion, ex_site and link_site should
+	  # be the same if the link is to be removed. If it's not
+	  # labeled at all then we kill it.
+
+	  if (!$test && !$add_only) { # get out the axe
+	    if (unlink ("$depot/$ex_pack")) { # My eyes!!!!
+	      $activity = 1; # Yesss!
+	    } else {
+	      logprint("Could not unlink $depot/$ex_pack\n", 1);
+	    }
+	  }
+	}
+      }
+    }
+  }
+} #exclude_me
+
+#######################################################################
+#
+#                                                            print_info
+# input: none
+#
+# uses: %excluded
+#       %installed
+#       %prev_installed
+#
+# output: prints some info
+#
+#######################################################################
+sub print_info {
+  my (@allpacks,$sitedirs,$pack_priority,$tempsite,$pack);
+
+  foreach $tempsite (@sites) {
+    if ($verbose || $test) {
+      print"\nSite: $tempsite \n";
+    }
+
+    if (!$switches{'q'} && !$test) {
+      print LOG "\nSite: $tempsite\n";
+    }
+
+    $sitelabel = $sitedirs{$tempsite}; # stores the corresponding label
+    $pack_priority = $priority{$sitelabel}; # priority of site volume
+
+    opendir(PACKSITE,"$tempsite")|| print"Could not open directory $tempsite\n";
+    @allpacks = grep (-d "$tempsite/$_", readdir PACKSITE);
+    closedir (PACKSITE);
+
+    foreach $pack (@allpacks) {
+      if (($installed{$pack} == $pack_priority) &&
+	  ($prev_installed{$pack} != $pack_priority)) {
+
+	if (!$switches{'q'} && !$test) {
+	  print LOG "\tAdded link: $pack\n";
+	}
+
+	if ($verbose || $test) {
+	  print "\tAdded link: $pack\n";
+	}
+      }
+
+      if (($prev_installed{$pack} == $pack_priority) &&
+	  ($installed{$pack} != $pack_priority)) {
+	if (!$switches{'q'} && !$test && !$add_only) {
+	  print LOG "\tRemoved link: $pack\n";
+
+	  if (defined $excluded_by{$pack}) {
+	    print LOG "\t\tExcluded By: $excluded_by{$pack}\n";
+	  }
+	}
+
+	if ($verbose || $test && !$add_only) {
+	  print "\tRemoved link: $pack\n";
+
+	  if (defined $excluded_by{$pack}) {
+	    print "\t\tExcluded By: $excluded_by{$pack}\n";
+	  }
+	}
+      }
+    }
+  }
+} # print_info
+
+#######################################################################
+#
+#                                                          print_header
+# input: none
+#
+# uses: $site_file variable
+#       $exclude_file variable
+#       $get_most_recent
+#
+# output: prints what files are being used as 'Sites' and '.Exclude'
+#         as well as the version and the priority scheme selected.
+#
+#######################################################################
+sub print_header {
+  if ($verbose) {
+    print"\n## Opt_Link Version:$version ##\n";
+    print"Reading from Sites File: $sitefile\n";
+    print"Reading From Primary Exclude File: $exclude_file\n";
+
+    if ($get_most_recent) {
+      print"Absolute Priority: Disabled\n";
+    } else {
+      print"Absolute Priority: Enabled\n";
+    }
+
+    if ($add_only) {
+      print"Adding new links only\n\n";
+    } else {
+      print"Adding and removing links\n\n";
+    }
+  }
+} # print_header
+
+##########################################################################
+#                                                                        #
+#                                MAIN                                    #
+#                                                                        #
+##########################################################################
+
+$usage_string =<<'ENDUSAGE';
+Usage:  opt_link [-asqvng] [-f\"config file\"] [-d\"depot dir\"]
+                 [-l\"log file/directory\"] [-b\"base directory\"]
+ENDUSAGE
+
+read_prefs($usage_string, $local_config_file, "asqvng", @ARGV);
+init_log("opt_link", $version);
+
+if (!check_lock("opt_link")) {
+  logprint("Can't create lockfile, aborting\n", 1);
+  close_log();
+  exit(1);
+}
+
+if (defined $switches{'v'}) {$verbose = 1;}
+if (defined $switches{'n'}) {$test = 1;}
+if (defined $switches{'g'}) {$get_most_recent = 1;}
+if (defined $switches{'a'}) {$add_only = 1;}
+
+# File containing all the manually entered exclusion information
+
+$exclude_file = "$dest/.exclude";
+
+# If a local copy of the sites file exists on the client under the
+# $dest directory, it will override the sites file under the etc
+# directory of the package (which is presumably on the server...)
+
+if (-e "$dest/sites") {
+  $sitefile = "$dest/sites";
+}
+
+print_header();
+read_site_file($sitefile);
+read_exfile($exclude_file);
+scan_depot($depot);
+process_sites();
+link_me();
+exclude_me();
+
+if ($activity) {
+  print_info();
+}
+
+clear_lock();
+close_log();

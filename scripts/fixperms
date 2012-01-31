@@ -1,0 +1,181 @@
+#
+# This script is designed to take a directory name and
+# fix all permissions below that point as appropriate for
+# publicly installed software.
+#
+# I.e., 
+#
+# if a file is readable by owner, it should be readable by all
+# if a file is executable by owner, it should be readable and executable by all
+#
+# Jonathan Abbey
+# 21 May 1996
+#
+# Erik Grostic
+# Modified 2 June 1997
+#
+#************************************************************************
+#
+# Copyright (C) 1996-2003  The University of Texas at Austin.
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+#    02111-1307, USA
+#
+#    Written by: Computer Science Division, Applied Research Laboratories,
+#    University of Texas at Austin  opt-depot@arlut.utexas.edu
+#
+#***********************************************************************
+# Written by Jonathan Abbey, Erik Grostic
+#
+# v3.0
+# Made fixperms abort if a directory is not explicitly specified on
+# the command line.. no more fixperming '.' if no directory is given.
+# Added a safety check on the uid and gid lookup.
+#
+# Slight tweaks to bring up to modern Perl usage.  Bundled with v3.0
+# of the opt_depot suite.
+#
+# Jonathan Abbey 7 August 2003
+#
+# Release: $Name:  $
+# Version: $Revision: 1.8 $
+# Last Mod Date: $Date: 2003/08/11 21:48:14 $
+#
+#####################################################################
+
+use Getopt::Std; # Used to get command line arguments
+
+getopt('og'); # the -o option changes the ownership variable, whereas
+              # -g changes the name used fo the group.
+
+if (!defined $opt_o) {
+    $owner = "root";
+} else {
+    $owner = $opt_o;
+}
+
+if (!defined $opt_g) {
+
+  # find a reasonable default group
+
+  # this list is made for a Solaris system first, than a redhat-y
+  # linux, then we just start making stuff up.  Feel free to change
+  # this list, if you want.
+
+  @grouplist = ("other", "root", "wheel", "bin", "sys", "users");
+
+  foreach (@grouplist) {
+    $group = $_;
+    $gid = (getgrnam($group))[2];
+
+    if (defined $gid) {
+      last;
+    }
+  }
+} else {
+  $group = $opt_g;
+}
+
+$uid = (getpwnam($owner))[2];
+$gid = (getgrnam($group))[2];
+
+if (!defined $uid) {
+  die "Couldn't find uid for user $owner\n";
+}
+
+if (!defined $gid) {
+  die "Couldn't find gid for user $group\n";
+}
+
+if ($#ARGV >= 0) {
+  $directory = $ARGV[0];
+} else {
+  die "No directory specified";
+}
+
+fixdir($directory, 1);
+exit;
+
+#########################################################################
+#
+#                                                                  fixdir
+# input: directory name, toplevel flag
+#
+# output: makes sure that the directory and all subordinate directories
+#         have permissions set appropriately
+#
+#########################################################################
+sub fixdir {
+  my($dir, $toplevel) = @_;
+  my(@allfiles, $file, $filename, $mode);
+
+  # print "entering $dir\n";
+
+  opendir(THISDIR, $dir);
+  @allfiles = readdir(THISDIR);
+  closedir(THISDIR);
+
+  for $file (@allfiles) {
+    # print "testing $dir/$file\n";
+
+    if (($file eq "..") || (($toplevel == 0) && ($file eq ".")) || (-l "$dir/$file")) {
+      # print "skipping $file\n";
+      next;
+    }
+
+    $filename = "$dir/$file";
+    $mode = (stat($filename))[2];
+
+    # _ is a special character, referring to the last stat target..
+    # this makes things go faster
+
+    if (-f _ && ((-u _) ||(-g _))) {
+      # um, got a setuid program.
+      # watch it.
+
+      print "*** Warning: $filename is a setuid and/or setgid program. Not changing perms.\n";
+      next;
+    }
+
+    if ($mode & 0100) {
+      chmod ($mode | 0055,$filename);
+      print "$filename\n";
+    } elsif ($mode & 0400) {
+      chmod ($mode | 0044, $filename);
+      print "$filename\n";
+    }
+
+    if (($> == 0) || ($< == 0)) {
+      # we're root, chown to the proper ownership
+      chown $uid, $gid, $filename;
+    }
+  }
+
+  # and recurse down
+
+  for $file (@allfiles) {
+    if (($file eq ".") || ($file eq "..") || (-l "$dir/$file")) {
+      # print "skipping $file\n";
+      next;
+    }
+	
+    $filename = "$dir/$file";
+	
+    if (-d $filename) {
+      # print "recursing on $filename\n";
+      fixdir($filename, 0);
+    }
+  }
+}

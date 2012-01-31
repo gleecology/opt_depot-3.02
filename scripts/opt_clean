@@ -1,0 +1,494 @@
+#
+# opt_clean v3.02 -*- Perl -*-
+#
+# This is a perl script that will find all the links under
+# $dest and ensures that the files pointed to under $depot
+# exist and are not excluded in the exclude file.  The
+# script will remove any obsolete links that target the
+# $depot directory, but which do not have valid targets..
+#
+#***********************************************************************
+#
+# Copyright (C) 1997-2009  The University of Texas at Austin.
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+#
+#    Written by: Computer Science Division, Applied Research Laboratories,
+#    University of Texas at Austin  opt-depot@arlut.utexas.edu
+#
+#***********************************************************************
+# Written by Jeremy Thibeaux, Jonathan Abbey, Amy Shook
+# October 8, 1993 - June 1, 1997
+#
+# v2.0
+# Added modifications to handle recursive cleaning within a driectory
+# and to access directory info from a configuration file
+# Erik Grostic 15 May 1997
+#
+# v2.01
+# Fixed a bug in procargs that had to do with the regex matching for
+# re-defining the destination directory by using command line parameters.
+# A -b option must now be given with the destination (or base) directory
+# Erik Grostic 10 July 1997
+#
+# v3.0
+# Totally reworked the recursive cleaning algorithm to properly handle
+# cascading collapse.  Fixed a bug which prevented opt_clean from
+# removing any symlinks in directories which contained only links
+# pointing to the same target directory.  Reworked tons to use
+# Opt_depot::Common, and modern Perl module function support.  Script
+# is now position independent.  No more attempts at Perl 4
+# compatibility for us, no sir.
+# Jonathan Abbey 12 August 2003
+#
+# Release: $Name:  $
+# Version: $Revision: 1.28 $
+# Last Mod Date: $Date: 2009/12/09 00:30:39 $
+#
+#########################################################################
+
+use English;
+use FindBin qw($RealBin);
+
+use lib "$RealBin/../modules";
+use Opt_depot::Common;
+
+$version = "3.02";
+
+## defaults #########################################################
+
+# configuration file containing $dest, $depot and $logdir vars
+
+$local_config_file = resolve($RealBin, "../etc/opt.config");
+
+# this file is created by opt_depot when it makes a directory. only
+# directories containing this file may be removed or collapsed
+
+$opt_file = ".made_by_opt_depot";
+
+#########################################################################
+#
+#                                                             read_exfile
+#
+# input: name of am exclude file to process
+#
+# output: writes to associative arrays %exclude and %packexclude
+#
+#
+#########################################################################
+sub read_exfile {
+  my($exfile) = @_;
+
+  my $tmpstr;
+
+  if (-e $exfile) {
+    open(EXFILE, $exfile) || die "Could not open $exfile";
+
+    while (<EXFILE>) {
+      s/\s+$//;			# cut off any trailing whitespace
+
+      if (/^\s*#/) {
+	next;			# comment
+      }
+
+      if (/^\s*$/) {
+	next;			# blank line
+      }
+
+      # if the string is quoted, pre-process the quotes
+      
+      if (/^\s*\"/ || /^\s*\'/) {
+	$tmpstr = parsequoted($_, 0); # leave in escapes for the moment
+
+	# if we have an unescaped :, treat that as a label separator,
+	# and skip this entry, since we leave labeled exclusions for
+	# opt_link to process
+	
+	if ($tmpstr !~ /^(?:\\.|[^:])*$/) {
+	  next;
+	}
+
+	$_ = parsequoted($_, 1); # now process the escapes
+
+	if (/^(\/.+)$/) {
+	  # leading slash -- take this as an absolute path name
+	  # $1 is the complete absolute path/filename
+
+	  $exclude{"$1"}=1;
+	} elsif (/^([^\/]+\/.+)$/) {
+	  # No leading slash but there are embedded slashes..
+	  # take this as a depot directory relative path
+	  # $1 is the complete relative path and filename
+
+	  $exclude{"$depot/$1"}=1;
+	} elsif (/^([^\/]+)$/) {
+	  # No leading slash and no embedded slashes
+	  # take this as a package name and version num
+	  # if any is included.
+	  # $1 is the complete package name
+
+	  $packexclude{$1}=1;
+	} else {
+	  logprint("  ERROR:  bad entry in .exclude file \"$_\"", 1);
+	}
+      } else {
+	# We didn't have a quoted string, assume that whitespace
+	# will terminate
+
+	# of course, if we have an unescaped colon we have to assume
+	# it's intended to be a site label, and we have to skip it,
+	# since only opt_link knows enough to worry about site
+	# excludes
+
+	if (!/^(?:\\.|[^:])*$/) {
+	  next;
+	}
+
+	# remove any backslash escape characters
+
+	s/\\(.)/$1/g;
+
+	if (/^\s*(\/\S+)$/) {
+	  # leading slash -- take this as an absolute path name
+	  # $1 is the complete absolute path/filename
+
+	  $exclude{"$1"}=1;
+	} elsif (/^\s*([^\/]+\/\S*)$/) {
+	  # No leading slash but there are embedded slashes..
+	  # take this as a depot directory relative path
+	  # $1 is the complete relative path and filename
+
+	  $exclude{"$depot/$1"}=1;
+	} elsif (/^\s*([^\/]+)$/) {
+	  # No leading slash and no embedded slashes
+	  # take this as a package name and version num
+	  # if any is included.
+	  # $1 is the complete package name
+
+	  $tmpstr = $1;
+
+	  if ($tmpstr =~ /^(\S*)/) {
+	    $packexclude{$1}=1;
+	  }
+	} else {
+	  logprint("  ERROR:  bad entry in .exclude file \"$_\"", 1);
+	}
+      }
+    }
+
+    close(EXFILE);
+  }
+}
+
+#########################################################################
+#
+#                                                            read_pack_ex
+#
+# input:
+#
+# uses: $depot
+#       %exclude
+#
+# output: if a package is currently linked in $depot, and that package
+#         has its own .exclude file, then the exclusions listed in that
+#         file are added to the main exclusion hash.
+#
+#########################################################################
+sub read_pack_ex {
+  my(@allfiles,@contents);
+
+  opendir(IN, $depot) || die "Could not open $depot";
+  @contents = readdir(IN);
+  closedir(IN);
+
+  @allfiles = grep ((-e "$depot/$_") && (!/^\.\.?$/), @contents);
+
+  foreach $file (@allfiles) {
+    if (-e "$depot/$file/.exclude") {
+      open(EXFILE, "$depot/$file/.exclude") || die "Could not open $depot/$file/.exclude";
+
+      while (<EXFILE>) {
+	s/\s+$//;			# cut off any trailing whitespace
+
+	if (/^\s*#/) {
+	  next;			# comment
+	}
+
+	if (/^\s*$/) {
+	  next;			# blank line
+	}
+
+	# if the string is quoted, pre-process the quotes
+
+	if (/^\s*\"/ || /^\s*\'/) {
+	  $_ = parsequoted($_, 1);
+
+	  if (/^(\/.+)$/) {
+	    # leading slash -- take this as an absolute path name
+	    # $1 is the complete absolute path/filename
+
+	    $exclude{"$1"}=1;
+	  } elsif (/^([^\/]+\/.+)$/) {
+	    # No leading slash but there are embedded slashes..
+	    # take this as a depot directory relative path
+	    # $1 is the complete relative path and filename
+
+	    $exclude{"$depot/$1"}=1;
+	  } elsif (/^([^\/]+)$/) {
+	    # No leading slash and no embedded slashes
+	    # take this as a package name and version num
+	    # if any is included.
+
+	    # We used not to worry about these excludes, on the theory
+	    # that opt_link would deal with them as necessary, but I
+	    # seem to have convinced myself we should allow packages
+	    # to exclude each other at the opt_clean stage even if
+	    # opt_link isn't run.  I don't remember at the moment why
+	    # I thought this was a good change, though.  test8a in the
+	    # test_opt script is predicated on this, though.
+
+	    $packexclude{"$1"}=1;
+	  } else {
+	    logprint("  ERROR:  bad entry in .exclude file \"$_\"", 1);
+	  }
+	} else {
+	  # We didn't have a quoted string, assume that whitespace
+	  # will terminate
+
+	  if (/^\s*(\/\S+)/) {
+	    # leading slash -- take this as an absolute path name
+	    # $1 is the complete absolute path/filename
+
+	    $exclude{"$1"}=1;
+	  } elsif (/^\s*([^\/]+\/\S*)/) {
+	    # No leading slash but there are embedded slashes..
+	    # take this as a depot directory relative path
+	    # $1 is the complete relative path and filename
+
+	    $exclude{"$depot/$1"}=1;
+	  } elsif (/^\s*([^\/]+)$/) {
+	    # No leading slash and no embedded slashes or whitespace
+	    # take this as a package name and version num
+	    # if any is included.
+	    #
+	    # We used not to worry about these excludes, on the theory
+	    # that opt_link would deal with them as necessary, but I
+	    # seem to have convinced myself we should allow packages
+	    # to exclude each other at the opt_clean stage even if
+	    # opt_link isn't run.  I don't remember at the moment why
+	    # I thought this was a good change, though.  test8a in the
+	    # test_opt script is predicated on this, though.
+
+	    $packexclude{"$1"}=1;
+	  } else {
+	    logprint("  ERROR:  bad entry in .exclude file \"$_\"", 0);
+	  }
+	}
+      }
+
+      close(EXFILE);
+    }
+  }
+}
+
+#########################################################################
+#
+#                                                                cleandir
+#
+# input: the pathname of a directory to scan through
+#
+# cleandir() recursively scans through the supplied directory, removing
+# any symbolic links that point to non-existent files in the $depot
+# directory tree, or which have been excluded by an .exclude file.
+#
+# if opt_clean is run with recursion enabled, cleandir() will also
+# take the opportunity to undo recursive directory unification as may
+# be practical.
+#
+#########################################################################
+sub cleandir {
+  my ($dir) = @_;
+
+  my (@dirs, $dir_x, $reslink, $link, @links, @contents);
+  my ($first, $second, @nonlinks);
+
+  if ($dir eq $depot) {
+    logprint("opt_clean: Configuration error, I refuse to try to clean $depot\n", 1);
+    return;
+  }
+
+  opendir(DIR, "$dir") || die "Could not open $dir";
+  @contents = readdir(DIR);
+  closedir(DIR);
+
+  @dirs = grep (!/^\.\.?$/ && !(-l "$dir/$_") && (-d "$dir/$_"), @contents);
+
+  # check for subordinate directories recursively..
+
+  foreach $dir_x (@dirs) {
+    cleandir("$dir/$dir_x");
+  }
+
+  # the recursive cleandir calls may have changed the contents of this
+  # directory..  re-scan $dir and let's start processing symlinks
+
+  opendir(DIR, "$dir") || die "Could not reopen $dir";
+  @contents = readdir(DIR);
+  closedir(DIR);
+
+  @links = grep (-l "$dir/$_", @contents);
+
+  foreach $link (@links) {
+    $reslink = resolve($dir, readlink("$dir/$link"));
+
+    # $reslink is a string containing the filename of
+    # the resolved absolute target of the symlink $dir/$link
+
+    if ("$reslink/" =~ /^$depot\//) {
+      # yay!  the link points into the $depot tree.. we can
+      # maybe blow it away if it is old
+
+      $reslink =~ /^$depot\/([^\/]*)/;
+
+      # $1 is the package name..
+
+      # check to see if the target doesn't exist first, then if the
+      # target file has been excluded by the .exclude file, then if
+      # the target package has been excluded by the .exclude file
+      #
+      # Note that we don't try and deal with removing links obviated
+      # by a .priority file.. we leave all priority handling for
+      # opt_depot to handle
+
+      if (!(-e $reslink || -l $reslink) || $exclude{$reslink} ||
+	  $packexclude{$1} || pathcheck($reslink, %exclude)) {
+	if (!unlink("$dir/$link")) {
+	  logprint("  ERROR: could not remove $dir/$link", 1);
+	} else {
+	  logprint("  removed $dir/$link -> $reslink\n", 0);
+	}
+      }
+    }
+  }
+
+  # if we're not operating recursively or if we don't have a marker
+  # file indicating this directory was created by opt_depot under the
+  # recursive unification rules, we're done.
+
+  if ((!defined $switches{'r'} && !defined $switches{'R'}) ||
+      !-e "$dir/$opt_file") {
+    return;
+  }
+
+  # we may have removed symlinks above.. let's re-scan $dir one more
+  # time
+
+  opendir(DIR, "$dir") || die "Could not reopen(x2) $dir";
+  @contents = readdir(DIR);
+  closedir(DIR);
+
+  # were there any non-symlinks left that we needed to worry about?
+
+  @nonlinks = grep ((!-l "$dir/$_") && (!/^\.\.?$/) && ($_ ne $opt_file), @contents);
+
+  if (defined @nonlinks && $#nonlinks >= 0) {
+    # we've got something which is not a link or opt_depot-created
+    # file..  no need to worry about collapsing or removing the
+    # directory, we're done.
+
+    return;
+  }
+
+  # we're recursive and opt_depot made this directory, and we know
+  # there's nothing but symlinks in $dir.  If all the symlinks
+  # point to files in the same directory, we'll collapse this directory
+  # and replace it with a symlink
+
+  @links = grep (-l "$dir/$_", @contents);
+
+  if (defined @links && $#links >= 0) {
+    # get location of first package as a comparison value.
+
+    $first = extractdir(readlink("$dir/@links[0]"));
+
+    if ("$first/" !~ /^$depot\//) {
+      # we've got a symlink pointing out of our $depot tree..
+      # don't touch it, we're done
+      return;
+    }
+
+    foreach $link (@links) {
+      $second = extractdir(readlink("$dir/$link"));
+
+      if ($first ne $second) {
+	# links do not all point to same directory, so we're not
+	# going to collapse.. done.
+	return;
+      }
+    }
+
+    logprint("Collapsing Directory: $dir\n", 0);
+
+    if (killdir("$dir")) {
+      symlink("$first", "$dir");
+      return;
+    } else {
+      logprint("Couldn't successfully collapse $dir!\n", 1);
+    }
+  } else {
+    # directory is empty -- annihilate it
+
+    logprint("Removing empty directory: $dir\n", 0);
+
+    if (killdir("$dir")) {
+      return;
+    } else {
+      logprint("Error: Could not remove $dir\n", 1);
+    }
+  }
+}
+
+################################################################################
+#                                                                              #
+#                                     MAIN                                     #
+#                                                                              #
+################################################################################
+
+$usage_string =<<'ENDUSAGE';
+Usage:  opt_clean [-svqrR] [-f\"config file\"] [-d\"depot dir\"]
+                  [-l\"log directory\"] [\b\"base directory\"]
+ENDUSAGE
+
+read_prefs($usage_string, $local_config_file, "svqrR", @ARGV);
+init_log("opt_clean", $version);
+
+if (!check_lock("opt_clean")) {
+  logprint("Can't create lockfile, aborting\n", 1);
+  close_log();
+  exit(1);
+}
+
+$exclude = "$dest/.exclude"; # Name of the .exclude file
+
+read_exfile($exclude);
+read_pack_ex();
+
+chdir $dest || die "could not change to $dest";
+foreach $subdir (@subdirs) {
+  cleandir("$dest/$subdir");
+}
+
+clear_lock();
+close_log();

@@ -1,0 +1,367 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+<HEAD>
+   <TITLE>ARL:UT Package Installation Procedures</TITLE>
+</HEAD>
+<BODY TEXT="#000000" BGCOLOR="#FFFFFF" LINK="#0000EE" VLINK="#551A8B" ALINK="#FF0000" BACKGROUND="images/chalk.gif">
+
+<P><header><!-- Changed by: Jon NameServer,  3-Oct-1995 --><!-- Changed by: CSD Network Services Account, 11-Feb-1997 --></header></P>
+
+<H1>ARL:UT Package Installation Procedures</H1>
+
+<P><A HREF="http://www.arlut.utexas.edu/csd/people/jonathan_abbey.html">Jonathan
+Abbey<BR>
+</A>7 April 1995<BR>
+<BR>
+
+<HR>All software intended for installation with use with the <B>opt_depot</B>
+suite should be installed in accordance with a set of basic installation
+procedures. </P>
+
+<P>This document outlines the steps you need to follow when installing
+a new piece of software on an ARL:UT site volume. </P>
+
+<H2>Table of Contents</H2>
+
+<UL>
+<LI><A HREF="#packages">What Are Packages?</A> </LI>
+
+<LI><A HREF="#packagename">Choosing a Package Name</A> </LI>
+
+<LI><A HREF="#where">Where to Build and Install Software?</A> </LI>
+
+<LI><A HREF="#makefiles">Configuring Makefiles</A> </LI>
+
+<LI><A HREF="#preparing">Preparing the Installation Directory</A> </LI>
+
+<LI><A HREF="#installing">Installing the Software</A> </LI>
+
+<LI><A HREF="#permissions">Package Permissions</A> </LI>
+
+<LI><A HREF="#versioning">Handling Versioning</A> </LI>
+
+<LI><A HREF="#documentation">Documentation Procedures</A> </LI>
+
+<LI><A HREF="#integrating">Integrating the Software into the Software Base
+Directory (/opt)</A></LI>
+</UL>
+
+<P>
+<HR></P>
+
+<H3><A NAME="packages"></A>What Are Packages?</H3>
+
+<P>A package is a directory containing all the files needed to use a piece
+of software. Packages are typically installed on a lab-wide site volume,
+and accessed by workstations through NFS. </P>
+
+<P>Packages are designed to be position independent. In principle, a package
+can be physically located anyplace, as long as a symbolic link exists from
+<TT>/opt/depot/&lt;packagename&gt;</TT> to the physical location of the
+package. The software in each package is configured so that it looks for
+its associated files within the <TT>/opt/depot/&lt;packagename&gt;</TT>
+directory.</P>
+
+<P>Packages have a defined structure. Each package may contain a bin directory,
+a lib directory, an include directory, an info directory, and a man directory.
+Executable binary programs and scripts go in the bin directory, man pages
+go into the man directory. If the package incorporates .h files that should
+be available to software outside of the package, these .h files should
+be placed in the include directory. Any libraries in the package that should
+be available to the entire system should be located in the lib directory.
+GNU programs may include .info files for documentation. These should be
+placed in the info directory. </P>
+
+<P>A package may contain any number of other directories or files.. these
+other files and directories will not be integrated into the normal user
+environment, but the package itself will make use of them as needed. </P>
+
+<P>
+<HR></P>
+
+<H3><A NAME="packagename"></A>Choosing a Package Name</H3>
+
+<P>Packages are named. The name of the package is the filename of the directory
+containing the package. </P>
+
+<P>Package names are typically of the form <TT>name-version</TT>, for instance
+<TT>gcc-2.6.3</TT> or <TT>ncftp-2.0.2</TT>. The precise form of the package
+name is not significant, but different versions of the package should be
+given different package names. This ensures that when the time comes to
+install a new version, it is possible to keep both versions of the package
+around until all package users have had time to transition to the new version.
+</P>
+
+<P>The <B>opt_link</B> software has support for automating the transition
+process as part of running <B>opt_setup</B>. See the section below on <A HREF="#versioning">Handling
+Versioning</A> for more details. </P>
+
+<P>
+<HR></P>
+
+<H3><A NAME="where"></A>Where to Build and Install Software?</H3>
+
+<P>You should always plan on compiling and installing software on a system
+of the appropriate type. At ARL, our site-wide package archives for SunOS
+and Solaris are located on the same machine, a SparcCenter 2000 running
+Solaris. In order to compile and install software for SunOS, it is necesary
+to configure and build the software on a SunOS machine, then move it to
+the 2000. </P>
+
+<P>If the SunOS client machine has write access to the site volume, it
+will suffice to su to root and follow the first procedure listed under
+<A HREF="#preparing">Preparing the Software Base Directory</A>, below.
+</P>
+
+<P>If not, you will need to make a temporary directory on the SunOS client,
+either directly in <TT>/opt/depot</TT>, or in some other location with
+an appropriate symbolic link from <TT>/opt/depot/packagename</TT>. You
+compile and install into <TT>/opt/depot/packagename</TT> as described below,
+then make a tar file of the package's directory and transfer it to the
+server using ftp, as follows: </P>
+
+<PRE>        -- on the client --
+
+        cd /opt/depot
+        tar cvf /tmp/package.tar packagename
+        ftp csdsun1
+                login: root
+                cd /site/SunOS4.1.3/packages
+                binary
+                lcd /tmp
+                put package.tar
+                quit
+        rm /tmp/package.tar
+        rm -rf packagename
+        
+        -- on the server --
+        
+        cd /site/SunOS4.1.3/packages
+        tar xvf package.tar
+        rm package.tar
+</PRE>
+
+<P>Note that in the above example, we remove the package from the local
+<TT>/opt/depot</TT> directory. We are assuming that the client will use
+the package installed on the server through NFS after we run <B>opt_setup</B>.
+</P>
+
+<P>
+<HR></P>
+
+<H3><A NAME="makefiles"></A>Configuring Makefiles</H3>
+
+<P>If the software that you are installing comes from the GNU project,
+there will typically be a configure program that is used to create the
+makefiles for the program. </P>
+
+<P>Typically, you can run configure as follows: </P>
+
+<PRE>        configure --prefix=/opt/depot/packagename
+</PRE>
+
+<P>this will configure the software and makefiles so that when the software
+is installed and run, the software will look for its files under <TT>/opt/depot/packagename</TT>.
+</P>
+
+<P>Software that doesn't use the GNU autoconfigure system will need to
+have its makefiles modified by hand to work properly in the <B>opt_depot</B>
+package environment. Often it is a simple matter of modifying the makefiles
+to install the software with <TT>/opt/depot/packagename</TT> replacing
+<TT>/usr/local</TT> wherever <TT>/usr/local</TT> occurs. </P>
+
+<P>Additional steps may be necessary when modifying the makefiles. Makefiles
+will often assume that the <TT>/usr/local/bin</TT>, <TT>/usr/local/lib</TT>,
+<TT>/usr/local/include</TT>, and <TT>/usr/local/man</TT> directories already
+exist. You will have to make the corresponding directories (i.e., <TT>bin</TT>,
+<TT>lib</TT>, etc.) by hand under the package's main directory when you
+actually go to install the software. </P>
+
+<P>In general, you should make sure that any paths compiled into the software
+should be pointing to a file under <TT>/opt/depot/packagename</TT>, and
+that the makefiles will place the software in the appropriate directories
+under <TT>/opt/depot/packagename</TT> when you go to install. </P>
+
+<P>
+<HR></P>
+
+<H3><A NAME="preparing"></A>Preparing the Installation Directory</H3>
+
+<P>Many software packages' build structures are designed so that the install
+procedure will install the software and associated files into the location
+that the software has been configured to expect to find itself. But since
+we want to support location independence, what do you do if you don't actually
+want the software to be physically located in <TT>/opt/depot/packagename</TT>?
+In fact, normally you wouldn't install the software physically into <TT>/opt/depot</TT>,
+but rather in some other directory accessed through NFS by client systems.
+</P>
+
+<P>The way to deal with this is to have a symbolic link pointing from <TT>/opt/depot/packagename</TT>
+to the actual location of the software package, wherever it might be. The
+<B>opt_link</B> script in the <B>opt_depot</B> software suite is designed
+to build symbolic links connecting the <TT>/opt/depot</TT> directory to
+a standard NFS server location where packages are kept. </P>
+
+<P>This symbolic link must exist before you run the make install process.
+When using the ARL site volume, the order of operations goes something
+like this: </P>
+
+<PRE>        su
+        mkdir /v/site/packages/packagename
+        opt_link -vx  -- this creates /opt/depot/packagename, linked to /v/site/packagename
+        cd /opt/depot/packagename
+        mkdir bin lib include man man/man1 (etc.)
+</PRE>
+
+<P>In this example above, we had to su in order to be able to write to
+the NFS package archive accessed through /v/site/packages. If you are installing
+software in a location other than the main package server, you may not
+need to be root. Like this, say: </P>
+
+<PRE>        mkdir /usr2/diskspace/packages/packagename
+        ln -s /usr2/diskspace/packages/packagename /opt/depot/packagename
+        cd /opt/depot/packagename
+        mkdir bin lib include man man/man1 (etc.)
+</PRE>
+
+<P>You may also just install the software directly into /opt/depot: </P>
+
+<PRE>        mkdir /opt/depot/packagename
+        cd /opt/depot/packagename
+        mkdir bin lib include man man/man1 (etc.)
+</PRE>
+
+<P>
+<HR></P>
+
+<H3><A NAME="installing"></A>Installing the Software</H3>
+
+<P>Once you have the <TT>/opt/depot/packagename</TT> directory prepared,
+along with the necessary subdirectories, you should be able to just do
+</P>
+
+<PRE>        make
+        make install
+</PRE>
+
+<P>it is usually a very good idea to keep logs of the build and installation
+process.. you can do the following: </P>
+
+<PRE>        make &gt;&amp;make.log &amp;
+        tail -f make.log        -- view the output of make
+        make install&gt;&amp;install.log &amp;
+        tail -f install.log     -- view the output of the install
+</PRE>
+
+<P>in order to install the software. If the Makefile was configured properly,
+all files associated with the package will be installed under <TT>/opt/depot/packagename</TT>.
+
+<HR></P>
+
+<H3><A NAME="permissions"></A>Package Permissions</H3>
+
+<P>You need to make sure that all files in the package are executable and
+readable by everyone. You can guarantee that permissions are set appropriately
+by executing the following commands: </P>
+
+<PRE>        find /opt/depot/packagename -type f -exec chmod a+r {} \; -print
+        find /opt/depot/packagename -perm -0100 -exec chmod a+rx {} \; -print
+</PRE>
+
+<P>This will make all files in the package readable by all, and all directories
+and executable files executable by all. </P>
+
+<P>If you are installing into the ARL site volume, you should set the ownership
+of the package as follows: </P>
+
+<PRE>        chown -R root /opt/depot/packagename
+        chgrp -R other /opt/depot/packagename
+</PRE>
+
+<P>
+<HR></P>
+
+<H3><A NAME="versioning"></A>Handling Versioning</H3>
+
+<P>You will often find yourself needing to install a new version of a piece
+of software that has already been installed. If you are installing the
+new version on a single machine, either directly in the <TT>/opt/depot</TT>
+directory, or in some other non-shared directory, you can just remove the
+old version and install the new version. </P>
+
+<P>For a shared package archive, it is not that simple. You can't just
+remove the old version, because NFS clients of the package archive won't
+notice the new software until their system administrators run <B>opt_setup</B>.
+You have to keep the old version of the software around until all of the
+client systems have a chance to notice the new software and replace the
+links to the old software with links to the new software. </P>
+
+<P><B>opt_link</B> allows clients to link new packages in favor of old
+packages, but you have to set things up so that <B>opt_link</B> knows what
+new packages should replace what old packages. </P>
+
+<P>This is done by creating a file called <TT>.<B><I>exclude </I></B>in
+</TT>the top level directory of a new package. This file should contain
+a list of one or more packages that the new package should replace. For
+instance, suppose that we are installing a new version of gcc. Say the
+old package was called gcc-2.6.3, and our new package is called gcc-2.6.8.
+We could create the following file <TT>.exclude </TT>in <TT>/opt/depot/gcc-2.6.8</TT>:
+</P>
+
+<PRE>        # this package replaces older versions of gcc
+        gcc-2.6.3
+        gcc-2.6.1
+        gcc-2.5.8
+
+</PRE>
+
+<P>When the client systems next run <B>opt_setup</B>, <B>opt_link</B> will
+scan the client's <TT>/opt/.exclude</TT> file, and add <TT>gcc-2.6.3</TT>
+to it, as well as <TT>gcc-2.6.1</TT> and <TT>gcc-2.5.8</TT> (if they weren't
+already listed in <TT>/opt/.exclude</TT>). </P>
+
+<P>When opt_setup runs opt_clean, all the links to the newly excluded package
+will be removed. opt_depot will then forge links to the new package. </P>
+
+<P>After a reasonable amount of time, the old package can be removed from
+the shared package archive entirely. </P>
+
+<P>
+<HR></P>
+
+<H3><A NAME="documentation"></A>Documentation Procedures</H3>
+
+<P>A record for each installed package must be entered into the database
+of installed software. To do this, use the <A HREF="http://www.arlut.utexas.edu/csd/csdsdb/software_inst.html">documentation
+procedures</A> for packages for use with <A HREF="http://www.arlut.utexas.edu/csd/csdsdb/main_desc.html">csdsdb</A>.
+<BR>
+<BR>
+All packages should contain a file named <TT>ARLUT_README</TT> which gives
+details as to who installed the software, when it was installed, information
+about the software (version, purpose, source directory, ftp site, files
+included, etc.) along with any extra notes that may be appropriate for
+the package. <BR>
+<BR>
+The <TT>ARLUT_README</TT> file should be created with the <A HREF="http://www.arlut.utexas.edu/csd/csdsdb/main_desc.html">csdsdb</A>
+software database using the methods outlined in the <A HREF="http://www.arlut.utexas.edu/csd/csdsdb/software_inst.html">documentation
+procedures</A>. <BR>
+<BR>
+The <TT>ARLUT_README</TT> file should, of course, be world readable. </P>
+
+<P>
+<HR></P>
+
+<H3><A NAME="integrating"></A>Integrating the Software into the Base directory
+(/opt)</H3>
+
+<P>Once you have the software installed in <TT>/opt/depot/packagename</TT>
+with appropriate permissions and documentation, you should run <TT>opt_setup
+-vm</TT> on all systems that will make use of the package. Most workstations
+in the laboratory that are set to use the shared package archive will do
+this automatically on a periodic basis. </P>
+
+<P>
+<HR WIDTH="100%"><A HREF="mailto:opt-depot@arlut.utexas.edu">opt-depot@arlut.utexas.edu</A></P>
+
+</BODY>
+</HTML>

@@ -1,0 +1,151 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+<HEAD>
+   <TITLE>opt_depot (20-Feb-1996)</TITLE>
+   <META NAME="GENERATOR" CONTENT="Mozilla/3.01Gold (X11; I; SunOS 5.5.1 sun4d) [Netscape]">
+</HEAD>
+<BODY TEXT="#000000" BGCOLOR="#FFFFFF" LINK="#0000EE" VLINK="#9400D3" ALINK="#FF0000">
+
+<H1><IMG SRC="images/normal_logo.gif" HEIGHT=120 WIDTH=195 ALIGN=RIGHT> Opt_Link
+<FONT COLOR="#B22222">2.0</FONT></H1>
+
+<P>
+<HR><B>opt_link</B> is a companion to the opt_depot perl script. It creates
+and removes symbolic links from a single depot directory to software packages
+in various package sites. </P>
+
+<P>
+<HR></P>
+
+<H2><I>New Features of Opt_link <FONT COLOR="#B22222">2.0</FONT></I></H2>
+
+<UL>
+<P><IMG SRC="images/button.gif" HEIGHT=10 WIDTH=10 ALIGN=LEFT><I>Support for Multiple
+Site Volumes</I></P>
+
+<P>&nbsp;<IMG SRC="images/button.gif" HEIGHT=10 WIDTH=10><I>&nbsp;Priority ordering
+of site volumes</I></P>
+
+<P>&nbsp;<IMG SRC="images/button.gif" HEIGHT=10 WIDTH=10><I>&nbsp;Simple Exclusion
+Handling</I></P>
+</UL>
+
+<H4>
+<HR></H4>
+
+<H2><I>Upgrading from Opt_link 1.4.2</I></H2>
+
+<H4>Installing opt_link <FONT COLOR="#B22222">2.0</FONT> involves two processes:</H4>
+
+<OL>
+<LI>Creating a 'Sites' file.</LI>
+
+<LI>Replacing the master .exclude file used by opt_link 1.4.2 with a simpler
+exclusion file.</LI>
+</OL>
+
+<P><A NAME="sites"></A><B><I>Creation of a Sites file</I></B>. This file
+contains the priority and label information for any site directories. Here's
+an example:</P>
+
+<PRE>  main /v/site/packages
+  local /site/local/packages
+  verylocal /usr/local/packs
+</PRE>
+
+<P>Each label and accompanying directory would appear in a separate line
+in the sites file. </P>
+
+<P><B>Note:</B> The order in which the directories appear in the sites
+file dictates the priority level of the package sites, so in this case
+<I>/v/site/packages </I>would be a higher priority site than <I>/site/local/packages</I>.
+However, the prioritization of sites is optional (see <A HREF="#priority">priority
+modes</A>)</P>
+
+<P><B><I>New Primary Exclusion File</I></B>. Instead of relying on a semi-permanent
+record of all exclusions, opt_link<FONT COLOR="#000000"> 2.0 </FONT>processes
+each packages exclusion file during the program run. Because of this, the
+primary .exclude file need only contain those packages which are to have
+the highest priority exclusion.To put it another way, if a package is listed
+in the main .exclude file, it will not be installed.</P>
+
+<P>The master exclude file can also contain <B>site-specific </B>package
+exclusions, which take the form of &lt;label&gt;:&lt;excluded package&gt;.
+So if the line 'local:emacs-19.34' appeared in the .exclude file, then
+emacs-19.34 would not be installed from /<I>site/local/packages</I>, although
+it may still be installed from another package site (ie <I>/v/site/packages</I>
+or <I>/usr/local/packs</I>)</P>
+
+<P>A possible .exclude file might look something like this:</P>
+
+<PRE>  # New 2.0 .exclude file
+  
+  netscape-3.01
+  local:emacs-19.34
+  bash
+  main:pine3.91
+</PRE>
+
+<P>It would consist of general and site-specific exclusions in any order.</P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H2>Optional Features</H2>
+
+<P><B><I>-q Quiet</I></B>: As with opt_link 1.4.2, there is the option
+of recording opt_link's daily activities in a separate log file. If a link
+is created or removed, this information is ordered by package site and
+is written to the log file. The -q command disables logging.</P>
+
+<P><B><I>-v Verbosity</I></B>: If desired, the administrator may receive
+a printout of opt_link's activities. The printout would contain the same
+information as that which is appended to the log file.</P>
+
+<P><B><I>-n Test</I></B>: Running opt_link with the -n command causes the
+same information to be printed to the screen as with the -v verbose option,
+but no actual linking or unlinking is performed by the program.</P>
+
+<P><B><I>-g</I></B> <B><I>Get most recent</I></B>: The -g command disables
+absolute priority mode and enables get_most_recent behavior. See the following
+section on Priority Modes for an explanation on what each mode entails.</P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H2><A NAME="priority"></A>Priority Modes</H2>
+
+<H4>opt_link <FONT COLOR="#B22222">2.0</FONT> accommodates a couple of
+different schemes for determining a package's priority:</H4>
+
+<P><B><I>Absolute Priority</I></B>: If the <B>Get most recent</B> (<B><I>-g</I></B>)
+option is not selected, then a package will not be installed if its exclusion
+list contains a package which has already been installed from a higher
+priority site. </P>
+
+<P><B><I>Get most recent</I></B>: When the <B>Get most recent </B>(<B>-g</B>)
+option is selected,<B> </B>opt_link will allow exclusions to occur regardless
+of where a package is located. For example, a version of emacs-19.33 which
+excludes emacs-19.30 would be installed even if it resided on a lower priority
+site volume than emacs-19.30. </P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H2>The .priority file</H2>
+
+<P><B>opt_link</B> <B><FONT COLOR="#B22222">2.0</FONT></B> <B>does not
+use the .priority file at all</B>. </P>
+
+<P>It is used to resolve conflicts with the directory linking done by the
+opt_depot script, and is not needed for the linking operations that opt_link
+performs.</P>
+
+<ADDRESS>
+<HR WIDTH="100%"></ADDRESS>
+
+<ADDRESS><A HREF="mailto:butcher@arlut.utexas.edu">butcher@arlut.utexas.edu</A>
+-- Last Updated: 20 May 1997</ADDRESS>
+
+</BODY>
+</HTML>

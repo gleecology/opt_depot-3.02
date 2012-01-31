@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<html>
+<head>
+  <title>Opt_depot Installation</title>  
+</head>
+<body text="#000000" bgcolor="#C0C0C0" link="#B22222" vlink="#000080" alink="#FF0000" background="images/chalk.gif">
+
+<center>
+  <table border="15" cellspacing="0" cellpadding="0" height="15%" >
+    <tr align="center" valign="top">
+      <td align="center" valign="center" width="100%" height="75%"><font size="+4">Installing opt_depot using <font color="#B22222">setup.sh</font></font></td>
+    </tr>
+  </table>
+</center>
+
+<hr width="100%">
+
+<p>This document is intended to help guide the systems administrator though
+the process of installing opt_depot using the setup shell script included
+with the opt_depot software package.</p>
+
+<h3>Types of Installation</h3>
+
+<p>The first thing to do is figure out what type of configuration you want
+for opt_depot, depending on the functions you would like it to perform.
+<i>There are 3 types of installations</i>:</p>
+
+<ul>
+<li><b>Client-side Installation Only <i>(no network access)</i></b></li>
+</ul>
+
+<p><b><i>Example</i></b>: using opt_depot with a home Linux system.</p>
+
+<p><i>Advantages</i>: Allows clean and simple management of software packages
+in a non-networked UNIX environment.</p>
+
+<p><i>Configuration Issues</i>: Because there is no common network involved,
+running opt_link is unnecessary. Also, there is no need to put the line
+to run opt_setup into chron; simply run opt setup when installing any new
+software packages</p>
+
+<ul>
+<li><b>Client-side Installation with Network Access</b></li>
+</ul>
+
+<p><b><i>Example</i>:</b> In a networked system the opt_depot scripts are
+physically installed on each individual client, as opposed to having them
+installed on the server.</p>
+
+<p><i>Advantages</i>: This setup allows the greatest customizability among
+clients with respect to directory and file names.</p>
+
+<p><i>Disadvantages</i>:&nbsp;Maintaining the opt_depot scripts is more
+difficult, since each client has its own copy of the opt_depot software
+to maintain and update.</p>
+
+<p><i>Configuration Issues:</i> Since each client has a copy of opt_depot,
+separate configuration files will reside on each client as well. These
+files contain the directory information necessary to run the opt_depot
+scripts, and may vary from client to client.</p>
+
+<ul>
+<li><b>Shared Network Installation</b></li>
+</ul>
+
+<p><b><i>Example</i></b>: The opt_depot package is installed on the server,
+allowing all clients access to a shared copy of the program.</p>
+
+<p><i>Advantages</i>: see <b>client-side with network</b> disadvantages.
+Only the server's copy of opt_depot must maintained, and any client systems
+using opt-depot will possess the same directory structure with respect
+to the <a href="2.0glossary.html#depot">depot</a>, <a href="2.0glossary.html#base">software
+base </a>and log directories. However, each client may still have its own
+individual <a href="opt_link2.0.html">'sites'</a> file indicating the package
+archives for that particular client system.</p>
+
+<p><i>Disadvantages</i>: see <b>client-side with network </b>advantages.
+Directory and filenames must be constant across all clients. For example,
+if the depot directory is specified as &quot;/opt/depot&quot;, then all
+clients must use it as the designated depot directory.</p>
+
+<p><i>Configuration Issues</i>: Sharing a copy of the opt_depot located
+on the server also entails sharing a common configuration file, meaning
+that all directory and filenames used by opt_depot must be constant across
+the client systems.</p>
+
+<p>Here at Applied Research Laboratories we prefer to use the shared network
+installation, since it's is less of a hassle to maintain the opt_depot
+scripts. Thus far we have had no problems stemming from the use of consist
+ant directory names across our clients, and in fact this type of installation
+seems to make managing opt_depot a simpler task all around.</p>
+
+<hr width="100%">
+
+<h3>Running setup.sh</h3>
+
+<p><i>Step One: Finding Perl</i></p>
+
+<p>When the setup program is executed, the first thing it does is search
+for any versions of perl that may be on the system. If it finds either
+the 'perl' or 'perl5' command, it will return the directory where it was
+located. </p>
+
+<p>If perl is not found at all , or if the administrator doesn't want to
+use the perl version that was found, then setup.sh will prompt the administrator
+for the absolute pathname of the perl executable.</p>
+
+<p>It's important to remember that opt_depot needs perl 5,0 or above in
+order to function properly. In addition, the particular location of perl
+specified by the administrator during setup will be added to opt_depot
+during the copying process (<i>step six) </i>in the form of a <b>#! </b>line
+placed at the beginning of each opt_depot script.</p>
+
+<p><i>Step Two: Entering the Software Base directory</i></p>
+
+<p>Once the first step of the installation process has been completed,
+setup.sh will then ask the administrator to enter the software base directory.
+This directory is where the /<i>bin/lib/man/include/info </i>directories
+are located. We here at ARL use <i>/opt</i> and if no name is entered then
+setup.sh will designate <i>/opt </i>as the base directory.</p>
+
+<p><i>Step Three: Entering the Depot directory</i></p>
+
+<p>After entering the software base, the administrator will be prompted
+for the location of the depot directory. Depot may contain physically installed
+packages and/or symbolic links to packages in the software archives. </p>
+
+<p>For organizational purposes, the default for the depot directory is<i>
+/opt/depot</i>. We have found that placing the depot directory under the
+software base makes it easier to manage, but there is no requirement that
+depot be a sub-directory of the software base. </p>
+
+<p><i>Step Four: Entering the Log directory</i></p>
+
+<p>An optional feature of opt_depot is to have a log file created when
+opt_depot, opt_link and opt_clean are run. The output from these programs
+will be printed out to files contained the the log directory.</p>
+
+<p>Again, there is no requirement that the log directory be in any particular
+location relative to the depot or software base directories. At ARL we
+simply use <i>/logs/opt_depot.</i></p>
+
+<p><i>Step Five: Creating a sites file</i></p>
+
+<p>To effectively manage the depot directory, opt_link needs o know the
+locations of the package archives that contain packages available for linking
+into depot. This information is provided by the sites file.</p>
+
+<p>Setup.sh will execute the modify_scripts utility contained in the opt_depot
+package to create the sites file. Each entry in the file will consist of
+a label, the location of the package archive, and its relative priority.
+<i>There must be at least one software archive listed in the sites file
+for opt_link to function properly</i>.</p>
+
+<p><i>Step Six: Choosing an installation directory</i></p>
+
+<p>The final step in the installation process is to specify the directory
+where the opt_depot scripts will reside. Setup.sh will install the opt_depot
+scripts in a package style format to this directory, with the executable
+scripts placed under /bin, man pages placed under /man, and configuration
+and uti;ity files placed under /etc. The <b>#!</b> line from step one will
+be added to the scripts at this time.</p>
+
+<p><i>All Done</i></p>
+
+<p>At this point opt_depot should be able to run. The administrator may
+want to consider adding a call to opt_setup to the chron table and should
+create any <a href="glossary.html#.exclude">.exclude</a> or <a href="glossary.html#priority">.priority</a>
+files that might be needed. </p>
+
+<hr width="100%">
+
+<address><a href="mailto:opt-depot@arlut.utexas.edu">opt-depot@arlut.utexas.edu</a> -- <i>Last updated 3 June 2009</i></address>
+
+</body>
+</html>

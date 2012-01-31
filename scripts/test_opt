@@ -1,0 +1,1514 @@
+# test_opt v3.02 -*- Perl -*-
+#
+# Testing harness for the opt_depot scripts
+#
+#************************************************************************
+#
+# Copyright (C) 1993-2009  The University of Texas at Austin.
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+#    02111-1307, USA
+#
+#    Written by: Computer Science Division, Applied Research Laboratories,
+#    University of Texas at Austin  opt-depot@arlut.utexas.edu
+#
+#***********************************************************************
+# Written by Jonathan Abbey
+# 10 September 2003
+#
+# Release: $Name:  $
+# Version: $Revision: 1.51 $
+# Last Mod Date: $Date: 2009/12/09 00:30:40 $
+#
+#####################################################################
+
+use English;
+use FindBin qw($RealBin $RealScript);
+
+use lib "$RealBin/../modules";
+use Opt_depot::Common;
+
+$version = "3.02";
+
+$| = 1;				# auto-flush
+
+## defaults #########################################################
+
+# set $clean_up to 1 if you want to remove the test directory on
+# completion.. set to 0 if you want the test directory to remain as it
+# was configured for the last test run.. useful when developing new
+# tests, so long as you put your new test at the end of the test
+# sequence
+
+$clean_up = 1;
+
+$test_root = "/tmp/opt_suite-$version";
+$test_dir = "$test_root/base";
+$test_logdir = "$test_root/log";
+$test_etc = "$test_root/etc";
+
+if (defined $ENV{'PERLLOC'}) {
+  $perlloc = $ENV{'PERLLOC'};
+} else {
+  $perlloc = '/usr/bin/perl';	# default
+}
+
+#####################################################################
+
+$testconfA =<< "ENDTESTCONF1";
+Base: $test_dir
+Depot: $test_dir/depot
+Log: $test_logdir/opt_depot.log
+SiteFile: $test_etc/sites
+Subdirs: bin,include,info,lib,man
+AlwaysRecurse: No
+Recurse: include,lib,info
+ENDTESTCONF1
+
+$testconfB =<< "ENDTESTCONF2";
+Base: $test_dir
+Depot: $test_dir/depot
+Log: $test_logdir/opt_depot.log
+SiteFile: $test_etc/sites
+Subdirs: bin,include,info,lib,man
+AlwaysRecurse: No
+Recurse: include,lib,info
+GetMostRecent: Yes
+ENDTESTCONF2
+
+$testsitesA =<< "ENDSITES1";
+ENDSITES1
+
+$testsitesB =<< "ENDSITES2";
+LOCAL $test_root/sites/local
+ENDSITES2
+
+$testsitesC =<< "ENDSITES3";
+LOCALB $test_root/sites/localB
+LOCAL $test_root/sites/local
+ENDSITES3
+
+$testsitesD =<< "ENDSITES4";
+LOCAL $test_root/sites/local
+LOCALB $test_root/sites/localB
+ENDSITES4
+
+$testsitesI =<< "ENDSITESI";
+IFTOP_TEST $test_root/sites/iftop_test
+ENDSITESI
+
+$testsitesZ =<< "ENDSITES3";
+LOCALB $test_root/sites/localB
+LOCAL $test_root/sites/local
+LOCALZ $test_root/sites/localZ
+ENDSITES3
+
+%siteA = (label => 'local',
+	  path => "$test_root/sites/local",
+	  contents => [
+		       {name     => 'packA-1.0',
+			files    => ['bin/hi',
+				     'lib/test.so'],
+			excludes => ['packB-1.0']},
+		       {name     => 'packB-1.0',
+			files    => ['bin/hi',
+				     'lib/test.so',
+				     'lib/test2.so']},
+		       {name     => 'packC-1.0',
+			files    => ['bin/hiC',
+				     'man/manl/hiC.l',
+				     'include/hiC.h',
+				     'lib/testC.so'],
+			excludes => ['packC-0.5']},
+		       {name     => 'packC-0.5',
+			files    => ['bin/hiC',
+				     'man/manl/hiC.l',
+				     'include/hiC.h',
+				     'lib/testC.so']},
+		       {name     => 'packX-1.2',
+			files    => ['bin/asteroids',
+				     'README.asteroids',
+				     'man/man1/asteroids.1']}
+		      ]);
+
+%siteB = (label => 'localB',
+	  path => "$test_root/sites/localB",
+	  contents => [
+		       {name     => 'packA-2.0',
+			files    => ['bin/hi',
+				     'lib/test.so'],
+			excludes => ['packA-1.0']},
+		       {name     => 'packB-2.0',
+			files    => ['bin/hi',
+				     'lib/test.so',
+				     'lib/test2.so'],
+			excludes => ['packB-1.0']},
+		       {name     => 'packC-2.0',
+			files    => ['bin/hiC',
+				     'man/manl/hiC.l',
+				     'include/hiC.h',
+				     'lib/testC.so'],
+			excludes => ['packC-1.0']},
+		       {name     => 'packY-4.51',
+			files    => ['ARLUT_README',
+				     'bin/space invaders',
+				     'man/man5/space.5']}
+		      ]);
+
+%siteC = (label => 'localC',
+	  path => "$test_root/sites/localC",
+	  contents => [
+		       {name     => 'externalPack',
+			files    => ['bin/externalTest']}
+		      ]);
+
+%siteI = (label => 'iftop_test',
+	  path => "$test_root/sites/iftop_test",
+	  contents => [
+		       {name     => 'iftop-0.12a-jon',
+			files    => ['bin/iftop']},
+		       {name     => 'iftop-0.15',
+			files    => ['bin/iftop'],
+			excludes => ['iftop-0.12a-jon']}
+		      ]);
+
+%siteZ = (label => 'localZ',
+	  path => "$test_root/sites/localZ",
+	  contents => [
+		       {name     => 'siteZPack',
+			files    => ['bin/siteZtest']}
+		      ]);
+
+%test0 = (label  => 'Simple single-package link test',
+	  root   => $test_dir,
+	  start  => ['depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packA/man/manl/test.l'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/', 'man/manl/',
+		     'bin/hi->depot/packA/bin/hi',
+		     'lib/perl5->depot/packA/lib/perl5/',
+		     'include/test.h->depot/packA/include/test.h',
+		     'man/manl/test.l->depot/packA/man/manl/test.l'],
+	  endex  => ['^depot\/$', '^man\/cat.*\/'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_depot',
+	  error_count => 0);
+
+%test1 = (label  => 'First exclusion test',
+	  root   => $test_dir,
+	  start  => ['depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packB/bin/hi',
+		     'depot/packB/lib/perl5/spam/y.pl',
+		     'depot/packB/include/test.h'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'bin/hi->depot/packA/bin/hi',
+		     'lib/perl5->depot/packA/lib/perl5/',
+		     'include/test.h->depot/packA/include/test.h'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_depot',
+	  exclude => 'packB',
+	  error_count => 0);
+
+%test2 = (label  => 'Elementary recursion test',
+	  root   => $test_dir,
+	  start  => ['depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packB/bin/hi',
+		     'depot/packB/lib/perl5/spam/y.pl',
+		     'depot/packB/include/test.h',
+		     'depot/packC/include/test.h'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'bin/hi->depot/packB/bin/hi',
+		     'lib/perl5/', 'lib/perl5/.made_by_opt_depot',
+		     'lib/perl5/spam/', 'lib/perl5/spam/.made_by_opt_depot',
+		     'lib/perl5/spam/x.pl->depot/packA/lib/perl5/spam/x.pl',
+		     'lib/perl5/spam/y.pl->depot/packB/lib/perl5/spam/y.pl',
+		     'include/test.h->depot/packB/include/test.h'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_depot',
+	  priority => "packB/bin/\npackB/include/",
+	  error_count => 0);
+
+
+%test3 = (label  => 'Multi-level recursion test',
+	  root   => $test_dir,
+	  start  => ['depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packB/bin/hi',
+		     'depot/packB/lib/packB.so',
+		     'depot/packB/lib/perl5/spam/y.pl',
+		     'depot/packB/include/test.h',
+		     'depot/packC/include/test.h',
+		     'depot/packC/lib/perl5/spam/mod/packC.pm'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'bin/hi->depot/packB/bin/hi',
+		     'lib/packB.so->depot/packB/lib/packB.so',
+		     'lib/perl5/', 'lib/perl5/.made_by_opt_depot',
+		     'lib/perl5/spam/', 'lib/perl5/spam/.made_by_opt_depot',
+		     'lib/perl5/spam/x.pl->depot/packA/lib/perl5/spam/x.pl',
+		     'lib/perl5/spam/y.pl->depot/packB/lib/perl5/spam/y.pl',
+		     'lib/perl5/spam/mod->depot/packC/lib/perl5/spam/mod',
+		     'include/test.h->depot/packB/include/test.h'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_depot',
+	  priority => "packB/bin\npackB/include",
+	  error_count => 0);
+
+# this variant of test3 is to address the problem reported by Gil with
+# the opt_depot unification logic.  Here is how he defines the problem
+# in his report:
+#
+# --
+#
+# I ran into my first unification problem in opt_depot 3.0.
+#
+# Assume the following packages
+#
+# packagea:
+# /opt/depot/packagea/lib/d1/d2/file1
+#
+# packageb:
+# /opt/depot/packageb/lib/d1/d2/file2
+#
+# packagec:
+# /opt/depot/packagec/lib/d1/d3/d4/file3
+#
+# These should get unified such that d1 and d2 are physical directories
+# created by opt_depot.  Directory d3 should be a symlink to the d3 directory
+# under packagec.  The files file1 and file2 should be symlinks in the
+# d2 directory to file1 and file2 in packagea and packageb respectively.
+#
+# What is happening on my system is the equivalent of packagea hijacking
+# directory d1 (d1 gets symlinked to the d1 directory in packagea), then
+# opt_depot complaining it can't merge the directories under d1 in the
+# other packages.
+#
+# --
+#
+# This test worked without requiring any changes to opt_depot.. I suspect
+# Gil did not have recursive unification enabled for the lib subdirectory
+# in his configuration file.
+
+%test3a = (label  => 'Multi-level unification test',
+	  root   => $test_dir,
+	  start  => ['depot/packA/lib/d1/d2/file1',
+		     'depot/packB/lib/d1/d2/file2',
+		     'depot/packC/lib/d1/d3/d4/file3'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'lib/d1/',
+		     'lib/d1/.made_by_opt_depot',
+		     'lib/d1/d2/',
+		     'lib/d1/d2/.made_by_opt_depot',
+		     'lib/d1/d2/file1->depot/packA/lib/d1/d2/file1',
+		     'lib/d1/d2/file2->depot/packB/lib/d1/d2/file2',
+		     'lib/d1/d3->depot/packC/lib/d1/d3'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_depot',
+	  error_count => 0);
+
+%test4 = (label  => 'Priority link replacement test',
+	  root   => $test_dir,
+	  start  => ['bin/hi->depot/packA/bin/hi',
+		     'include/test.h->depot/packA/include/test.h',
+		     'lib/perl5->depot/packA/lib/perl5/',
+		     'depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packB/bin/hi',
+		     'depot/packB/lib/packB.so',
+		     'depot/packB/lib/perl5/spam/y.pl',
+		     'depot/packB/include/test.h',
+		     'depot/packC/include/test.h',
+		     'depot/packC/lib/perl5/spam/mod/packC.pm'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'bin/hi->depot/packB/bin/hi',
+		     'lib/packB.so->depot/packB/lib/packB.so',
+		     'lib/perl5/', 'lib/perl5/.made_by_opt_depot',
+		     'lib/perl5/spam/', 'lib/perl5/spam/.made_by_opt_depot',
+		     'lib/perl5/spam/x.pl->depot/packA/lib/perl5/spam/x.pl',
+		     'lib/perl5/spam/y.pl->depot/packB/lib/perl5/spam/y.pl',
+		     'lib/perl5/spam/mod->depot/packC/lib/perl5/spam/mod',
+		     'include/test.h->depot/packB/include/test.h'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_depot',
+	  priority => "packB",
+	  error_count => 0);
+
+# this test does a bit more with the .priority file.. in particular,
+# we test to make sure that explicit file reference in .priority
+# always overrides alternate file choices that are not in the
+# .priority file, and that a subdirectory priority otherwise wins.
+# Note that we start off with bin/hi pointing to packB's bin/hi, and
+# we want to end with bin/hi pointing to packA's bin/hi..  this lets
+# us test link replacement as well as the subdirectory/file logic.
+
+%test4b = (label  => 'Multi-level priority link subdirectory test',
+	   root   => $test_dir,
+	   start  => ['bin/hi->depot/packB/bin/hi',
+		      'include/test.h->depot/packA/include/test.h',
+		      'lib/perl5->depot/packA/lib/perl5/',
+		      'depot/packA/bin/hi',
+		      'depot/packA/bin/hello',
+		      'depot/packA/lib/perl5/spam/x.pl',
+		      'depot/packA/include/test.h',
+		      'depot/packB/bin/hi',
+		      'depot/packB/bin/hello',
+		      'depot/packB/lib/packB.so',
+		      'depot/packB/lib/perl5/spam/y.pl',
+		      'depot/packB/include/test.h',
+		      'depot/packC/include/test.h',
+		      'depot/packC/lib/perl5/spam/mod/packC.pm'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'bin/hi->depot/packA/bin/hi',
+		      'bin/hello->depot/packB/bin/hello',
+		      'lib/packB.so->depot/packB/lib/packB.so',
+		      'lib/perl5/', 'lib/perl5/.made_by_opt_depot',
+		      'lib/perl5/spam/', 'lib/perl5/spam/.made_by_opt_depot',
+		      'lib/perl5/spam/x.pl->depot/packA/lib/perl5/spam/x.pl',
+		      'lib/perl5/spam/y.pl->depot/packB/lib/perl5/spam/y.pl',
+		      'lib/perl5/spam/mod->depot/packC/lib/perl5/spam/mod',
+		      'include/test.h->depot/packB/include/test.h'],
+	   endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesA,
+	   action => 'opt_depot',
+	   priority => "packA/bin\npackB/bin/hello\npackB",
+	   error_count => 0);
+
+# this one is to test the proposition, put forth in the opt_depot man
+# page, that we don't do recursive directory unification if we have
+# priority for a link which can't be recursively unified.  In this
+# case, the interesting question is whether or not opt_depot will
+# properly preserve the link lib/perl5->depot/packA/lib/perl5, whose
+# target is not a directory, and which has been given priority
+
+%test4c = (label  => 'Recursive link maintenance priority test',
+	   root   => $test_dir,
+	   start  => ['bin/hi->depot/packB/bin/hi',
+		      'include/test.h->depot/packA/include/test.h',
+		      'lib/perl5->depot/packA/lib/perl5',
+		      'depot/packA/bin/hi',
+		      'depot/packA/bin/hello',
+		      'depot/packA/lib/perl5',
+		      'depot/packA/include/test.h',
+		      'depot/packB/bin/hi',
+		      'depot/packB/bin/hello',
+		      'depot/packB/lib/packB.so',
+		      'depot/packB/lib/perl5/spam/y.pl',
+		      'depot/packB/include/test.h',
+		      'depot/packC/include/test.h',
+		      'depot/packC/lib/perl5/spam/mod/packC.pm'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'bin/hi->depot/packA/bin/hi',
+		      'bin/hello->depot/packB/bin/hello',
+		      'lib/packB.so->depot/packB/lib/packB.so',
+		      'lib/perl5->depot/packA/lib/perl5',
+		      'include/test.h->depot/packA/include/test.h'],
+	   endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesA,
+	   action => 'opt_depot',
+	   priority => "packA\npackB/bin/hello\npackB",
+	   error_count => 0);
+
+
+# this is a modification of test4c, designed to verify that we won't
+# do recursive unification on top of a symlink pointing outside the
+# depot tree.
+
+%test4d = (label  => 'Recursive unification conflicting external link test',
+	   root   => $test_dir,
+	   start  => ['bin/hi->depot/packB/bin/hi',
+		      'include/test.h->depot/packA/include/test.h',
+		      'lib/perl5->/external/lib/perl5',
+		      'depot/packA/bin/hi',
+		      'depot/packA/bin/hello',
+		      'depot/packA/lib/perl5',
+		      'depot/packA/include/test.h',
+		      'depot/packB/bin/hi',
+		      'depot/packB/bin/hello',
+		      'depot/packB/lib/packB.so',
+		      'depot/packB/lib/perl5/spam/y.pl',
+		      'depot/packB/include/test.h',
+		      'depot/packC/include/test.h',
+		      'depot/packC/lib/perl5/spam/mod/packC.pm'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'bin/hi->depot/packA/bin/hi',
+		      'bin/hello->depot/packB/bin/hello',
+		      'lib/packB.so->depot/packB/lib/packB.so',
+		      'lib/perl5->/external/lib/perl5',
+		      'include/test.h->depot/packA/include/test.h'],
+	   endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesA,
+	   action => 'opt_depot',
+	   priority => "packA\npackB/bin/hello\npackB",
+	   error_count => 0);
+
+# This test exposes an interesting edge case in the recursive
+# unification logic.  The first thing opt_depot sees is the
+# depot/packA/lib/perl5 text file, which we link with no priority.
+# Then we see the depot/packB/lib/perl5 directory, which doesn't have
+# any priority to allow us to override the depot/packA/lib/perl5
+# link.  Then we get to depot/packC/lib/perl5, which contains
+# a prioritized file, depot/packC/lib/perl5/z.pm.  Because of that,
+# we should replace the packA/lib/perl5 symlink with one for packC's
+# lib/perl5, but then we need to realize that it is now possible
+# to merge in packB, which we've already passed by.
+#
+# To properly handle this case, the opt_depot link_me algorithm needs
+# to loop over all packages when something has been changed to catch
+# the opportunity under the previously processed package
+
+%test4e = (label  => 'Out-of-order prioritized recursion test',
+	   root   => $test_dir,
+	   start  => ['depot/packA/lib/perl5',
+		      'depot/packB/lib/perl5/x.pm',
+		      'depot/packB/lib/perl5/y.pm',
+		      'depot/packB/lib/perl5/a.pm',
+		      'depot/packC/lib/perl5/x.pm',
+		      'depot/packC/lib/perl5/z.pm'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'lib/perl5/',
+		      'lib/perl5/.made_by_opt_depot',
+		      'lib/perl5/x.pm->depot/packB/lib/perl5/x.pm',
+		      'lib/perl5/y.pm->depot/packB/lib/perl5/y.pm',
+		      'lib/perl5/a.pm->depot/packB/lib/perl5/a.pm',
+		      'lib/perl5/z.pm->depot/packC/lib/perl5/z.pm'],
+	   endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesA,
+	   action => 'opt_depot',
+	   priority => "packC/lib/perl5/z.pm",
+	   error_count => 0);
+
+# This test is as the last one, except we go beyond having to unify
+# only a pair of directories, and we verify that the recursive part of
+# the recursive unification logic works properly by supporting merging
+# of a common spam subdirectory down deep.
+
+%test4f = (label  => 'Greater than pairwise directory unification test',
+	   root   => $test_dir,
+	   start  => ['depot/packA/lib/perl5',
+		      'depot/packB/lib/perl5/x.pm',
+		      'depot/packB/lib/perl5/y.pm',
+		      'depot/packB/lib/perl5/a.pm',
+		      'depot/packC/lib/perl5/x.pm',
+		      'depot/packC/lib/perl5/z.pm',
+                      'depot/packD/lib/perl5/a.pm',
+                      'depot/packD/lib/perl5/b.pm',
+                      'depot/packD/lib/perl5/spam/c.pm',
+                      'depot/packE/lib/perl5/spam/d.pm'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'lib/perl5/',
+		      'lib/perl5/.made_by_opt_depot',
+		      'lib/perl5/x.pm->depot/packB/lib/perl5/x.pm',
+		      'lib/perl5/y.pm->depot/packB/lib/perl5/y.pm',
+		      'lib/perl5/a.pm->depot/packB/lib/perl5/a.pm',
+		      'lib/perl5/z.pm->depot/packC/lib/perl5/z.pm',
+                      'lib/perl5/b.pm->depot/packD/lib/perl5/b.pm',
+                      'lib/perl5/spam/',
+                      'lib/perl5/spam/.made_by_opt_depot',
+                      'lib/perl5/spam/c.pm->depot/packD/lib/perl5/spam/c.pm',
+                      'lib/perl5/spam/d.pm->depot/packE/lib/perl5/spam/d.pm'],
+	   endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesA,
+	   action => 'opt_depot',
+	   priority => "packC/lib/perl5/z.pm\npackB/lib/perl5/a.pm",
+	   error_count => 0);
+
+# This is another variant on test4e, but this one has a unique
+# directory packD/lib/perl5/spam, which need to properly not go down
+# into, since there is no other lib/perl5/spam directory to merge it
+# with.
+
+%test4g = (label  => 'Single directory recursive merge limit test',
+	   root   => $test_dir,
+	   start  => ['depot/packA/lib/perl5',
+		      'depot/packB/lib/perl5/x.pm',
+		      'depot/packB/lib/perl5/y.pm',
+		      'depot/packB/lib/perl5/a.pm',
+		      'depot/packC/lib/perl5/x.pm',
+		      'depot/packC/lib/perl5/z.pm',
+                      'depot/packD/lib/perl5/a.pm',
+                      'depot/packD/lib/perl5/b.pm',
+                      'depot/packD/lib/perl5/spam/c.pm',
+                      'depot/packD/lib/perl5/spam/d.pm'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'lib/perl5/',
+		      'lib/perl5/.made_by_opt_depot',
+		      'lib/perl5/x.pm->depot/packB/lib/perl5/x.pm',
+		      'lib/perl5/y.pm->depot/packB/lib/perl5/y.pm',
+		      'lib/perl5/a.pm->depot/packB/lib/perl5/a.pm',
+		      'lib/perl5/z.pm->depot/packC/lib/perl5/z.pm',
+                      'lib/perl5/b.pm->depot/packD/lib/perl5/b.pm',
+                      'lib/perl5/spam->depot/packD/lib/perl5/spam'],
+	   endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesA,
+	   action => 'opt_depot',
+	   priority => "packC/lib/perl5/z.pm\npackB/lib/perl5/a.pm",
+	   error_count => 0);
+
+# This is another variant on test4e, but this one has the
+# directory packD/lib/perl5/spam which has priority, so we shouldn't
+# try to do any merging with packE/lib/perl5/spam, which should be
+# entirely excluded
+
+%test4h = (label  => 'Prioritized directory recursive merge limit test',
+	   root   => $test_dir,
+	   start  => ['depot/packA/lib/perl5',
+		      'depot/packB/lib/perl5/x.pm',
+		      'depot/packB/lib/perl5/y.pm',
+		      'depot/packB/lib/perl5/a.pm',
+		      'depot/packC/lib/perl5/x.pm',
+		      'depot/packC/lib/perl5/z.pm',
+                      'depot/packD/lib/perl5/a.pm',
+                      'depot/packD/lib/perl5/b.pm',
+                      'depot/packD/lib/perl5/spam/c.pm',
+                      'depot/packD/lib/perl5/spam/d.pm',
+		      'depot/packE/lib/perl5/spam/c.pm',
+		      'depot/packE/lib/perl5/spam/d.pm'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'lib/perl5/',
+		      'lib/perl5/.made_by_opt_depot',
+		      'lib/perl5/x.pm->depot/packB/lib/perl5/x.pm',
+		      'lib/perl5/y.pm->depot/packB/lib/perl5/y.pm',
+		      'lib/perl5/a.pm->depot/packB/lib/perl5/a.pm',
+		      'lib/perl5/z.pm->depot/packC/lib/perl5/z.pm',
+                      'lib/perl5/b.pm->depot/packD/lib/perl5/b.pm',
+                      'lib/perl5/spam->depot/packD/lib/perl5/spam'],
+	   endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesA,
+	   action => 'opt_depot',
+	   priority => "packC/lib/perl5/z.pm\npackB/lib/perl5/a.pm\npackD/lib/perl5/spam",
+	   error_count => 0);
+
+%test5 = (label  => 'Exclude link replacement test',
+	  root   => $test_dir,
+	  start  => ['bin/hi->depot/packA/bin/hi',
+		     'include/test.h->depot/packA/include/test.h',
+		     'lib/perl5->depot/packA/lib/perl5/',
+		     'depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packB/bin/hi',
+		     'depot/packB/lib/packB.so',
+		     'depot/packB/lib/perl5/spam/y.pl',
+		     'depot/packB/include/test.h',
+		     'depot/packC/include/test.h',
+		     'depot/packC/lib/perl5/spam/mod/packC.pm'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'bin/hi->depot/packB/bin/hi',
+		     'lib/packB.so->depot/packB/lib/packB.so',
+		     'lib/perl5/', 'lib/perl5/.made_by_opt_depot',
+		     'lib/perl5/spam/', 'lib/perl5/spam/.made_by_opt_depot',
+		     'lib/perl5/spam/y.pl->depot/packB/lib/perl5/spam/y.pl',
+		     'lib/perl5/spam/mod->depot/packC/lib/perl5/spam/mod',
+		     'include/test.h->depot/packC/include/test.h'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_depot',
+	  exclude => 'packA',
+	  priority => "packC",
+	  error_count => 0);
+
+%test6 = (label  => 'Simple clean test',
+	  root   => $test_dir,
+	  start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'depot/',
+                     'bin/hi->depot/packA/bin/hi',
+		     'lib/perl5->depot/packA/lib/perl5/',
+                     'include/test.h->depot/packA/include/test.h'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_clean',
+	  error_count => 0);
+
+%test7 = (label  => 'Simple exclude test',
+	  root   => $test_dir,
+	  start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+                     'depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+                     'bin/hi->depot/packA/bin/hi',
+		     'lib/perl5->depot/packA/lib/perl5/',
+                     'include/test.h->depot/packA/include/test.h'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_clean',
+	  exclude => 'packA',
+	  error_count => 0);
+
+%test8 = (label  => 'Recursive clean test',
+	  root   => $test_dir,
+	  start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+                     'depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packB/bin/hi',
+		     'depot/packB/lib/perl5/spam/y.pl',
+		     'depot/packB/include/test.h',
+                     'bin/hi->depot/packB/bin/hi',
+                     'lib/perl5/', 'lib/perl5/.made_by_opt_depot',
+                     'lib/perl5/spam/', 'lib/perl5/spam/.made_by_opt_depot',
+                     'lib/perl5/spam/x.pl->depot/packA/lib/perl5/spam/x.pl',
+                     'lib/perl5/spam/y.pl->depot/packB/lib/perl5/spam/y.pl',
+                     'include/test.h->depot/packA/include/test.h'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'bin/hi->depot/packB/bin/hi',
+		     'lib/perl5->depot/packB/lib/perl5/'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_clean',
+	  exclude => 'packA',
+	  error_count => 0);
+
+%test8a = (label => 'Sites clean test',
+	   root  => $test_dir,
+	   start => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     "depot/iftop-0.12a-jon->".$siteI{'path'}."/iftop-0.12a-jon",
+		     "depot/iftop-0.15->".$siteI{'path'}."/iftop-0.15",
+		     'bin/iftop->depot/iftop-0.12a-jon/bin/iftop'],
+	   end   => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     "depot/iftop-0.12a-jon->".$siteI{'path'}."/iftop-0.12a-jon",
+		     "depot/iftop-0.15->".$siteI{'path'}."/iftop-0.15"],
+	   endex => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	   conf  => $testconfA,
+	   sites => $testsitesI,
+	   sitedefs => [\%siteI],
+	   action => 'opt_clean',
+	   error_count => 0);
+
+%test9 = (label  => 'Clean and link test',
+	  root   => $test_dir,
+	  start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+                     'depot/packA/bin/hi',
+		     'depot/packA/lib/perl5/spam/x.pl',
+		     'depot/packA/include/test.h',
+		     'depot/packB/bin/hi',
+		     'depot/packB/lib/perl5/spam/y.pl',
+		     'depot/packB/include/test.h',
+		     'depot/packC/lib/packC.so',
+                     'bin/hi->depot/packA/bin/hi',
+		     'bin/not_really->depot/packC/bin/not_really',
+                     'lib/perl5/', 'lib/perl5/.made_by_opt_depot',
+                     'lib/perl5/spam/', 'lib/perl5/spam/.made_by_opt_depot',
+                     'lib/perl5/spam/x.pl->depot/packA/lib/perl5/spam/x.pl',
+                     'lib/perl5/spam/y.pl->depot/packB/lib/perl5/spam/y.pl',
+                     'include/test.h->depot/packA/include/test.h'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'bin/hi->depot/packB/bin/hi',
+		     'lib/packC.so->depot/packC/lib/packC.so',
+		     'lib/perl5->depot/packB/lib/perl5/',
+		     'include/test.h->depot/packB/include/test.h'],
+	  endex  => ['^depot\/$', '^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesA,
+	  action => 'opt_setup',
+	  exclude => "packA",
+	  priority => "packB",
+	  error_count => 0);
+
+%test10 = (label  => 'Simple site volume test',
+	  root   => $test_dir,
+	  start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'depot/'],
+	  end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		     'depot/',
+		     "depot/packA-1.0->".$siteA{'path'}."/packA-1.0",
+		     "depot/packC-1.0->".$siteA{'path'}."/packC-1.0",
+		     "depot/packX-1.2->".$siteA{'path'}."/packX-1.2"],
+	  endex  => ['^\.priority$', '^\.exclude$'],
+	  conf   => $testconfA,
+	  sites  => $testsitesB,
+          sitedefs => [\%siteA],
+	  action => 'opt_link',
+	  error_count => 0);
+
+# test11 is designed to verify that the root .exclude file is supposed
+# to 'knock-out' inter-package .exclude exclusions in opt_link
+
+%test11 = (label  => 'Site volume exclude test',
+	   root   => $test_dir,
+	   start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/',
+		      "depot/packB-1.0->".$siteA{'path'}."/packB-1.0",
+		      "depot/packC-1.0->".$siteA{'path'}."/packC-1.0",
+		      "depot/packX-1.2->".$siteA{'path'}."/packX-1.2"],
+	   endex  => ['^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesB,
+	   sitedefs => [\%siteA],
+	   exclude => 'packA-1.0',
+	   action => 'opt_link',
+	   error_count => 0);
+
+%test12 = (label  => 'Multiple site volume test',
+	   root   => $test_dir,
+	   start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/',
+		      "depot/packA-2.0->".$siteB{'path'}."/packA-2.0",
+		      "depot/packB-2.0->".$siteB{'path'}."/packB-2.0",
+		      "depot/packC-2.0->".$siteB{'path'}."/packC-2.0",
+		      "depot/packX-1.2->".$siteA{'path'}."/packX-1.2",
+		      "depot/packY-4.51->".$siteB{'path'}."/packY-4.51"],
+	   endex  => ['^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesC,
+	   sitedefs => [\%siteA, \%siteB],
+	   exclude => 'packA-1.0',
+	   action => 'opt_link',
+	   error_count => 0);
+
+# test13 uses $testsitesD to put siteA ahead of siteB in the priority
+# order.  Since packA-1.0 on siteA excludes packB-1.0, packB-2.0 from
+# the lower priority site volume gets linked in, otherwise (as with
+# packA-1.0 and packC-1.0, we keep the packages from the higher
+# priority site volumes, even as packages on the lower priority site
+# volume attempts to exclude them
+
+%test13 = (label  => 'Multiple site volume test 2',
+	   root   => $test_dir,
+	   start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/',
+		      "depot/packA-1.0->".$siteA{'path'}."/packA-1.0",
+		      "depot/packB-2.0->".$siteB{'path'}."/packB-2.0",
+		      "depot/packC-1.0->".$siteA{'path'}."/packC-1.0",
+		      "depot/packX-1.2->".$siteA{'path'}."/packX-1.2",
+		      "depot/packY-4.51->".$siteB{'path'}."/packY-4.51"],
+	   endex  => ['^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesD,
+	   sitedefs => [\%siteA, \%siteB],
+	   action => 'opt_link',
+	   error_count => 0);
+
+%test13b = (label  => 'opt_link -a test',
+	   root   => $test_dir,
+	   start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/',
+		      'depot/packB-1.0->'.$siteA{'path'}.'/packB-1.0'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/',
+		      "depot/packA-1.0->".$siteA{'path'}."/packA-1.0",
+		      "depot/packB-2.0->".$siteB{'path'}."/packB-2.0",
+		      "depot/packB-1.0->".$siteA{'path'}."/packB-1.0",
+		      "depot/packC-1.0->".$siteA{'path'}."/packC-1.0",
+		      "depot/packX-1.2->".$siteA{'path'}."/packX-1.2",
+		      "depot/packY-4.51->".$siteB{'path'}."/packY-4.51"],
+	   endex  => ['^\.priority$', '^\.exclude$'],
+	   conf   => $testconfA,
+	   sites  => $testsitesD,
+	   sitedefs => [\%siteA, \%siteB],
+	   action => 'opt_link',
+	   params => '-a',
+	   error_count => 0);
+
+# test14 uses $testsitesD to put siteA ahead of siteB in the priority
+# order, and asserts $testconfB to make opt_link use the GetMostRecent
+# (-g) algorithm, allowing packages to exclude each other across site
+# volumes regardless of site volume priority
+
+%test14 = (label  => 'GetMostRecent multiple site volume test',
+	   root   => $test_dir,
+	   start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/',
+		      "depot/packA-2.0->".$siteB{'path'}."/packA-2.0",
+		      "depot/packB-2.0->".$siteB{'path'}."/packB-2.0",
+		      "depot/packC-2.0->".$siteB{'path'}."/packC-2.0",
+		      "depot/packX-1.2->".$siteA{'path'}."/packX-1.2",
+		      "depot/packY-4.51->".$siteB{'path'}."/packY-4.51"],
+	   endex  => ['^\.priority$', '^\.exclude$'],
+	   conf   => $testconfB,
+	   sites  => $testsitesD,
+	   sitedefs => [\%siteA, \%siteB],
+	   exclude => 'packA-1.0',
+	   action => 'opt_link',
+	   error_count => 0);
+
+# test15 is a nice big full opt_setup test, based on test12.  note
+# that we have a integral whitespace test for the packY-4.51 'space
+# invaders' bin file.  We're also using the .priority file to give
+# packA-2.0 priority for the bin/hi and lib/test.so linkages, even
+# though we'd expect packA-2.0 to effectively have priority anyway
+# since it comes first in the alphabetical readdir for opt_depot.
+#
+# We also have a linkage to a package (externalPack) on a site volume
+# (siteC) which is not mentioned in the sites file for this test, and
+# whose depot link should therefore be retained without change,
+# despite our excluding it for depot and clean.  We're also linking
+# to a package (siteZPack) which is in our list of site volumes,
+# so the manual exclusion should cause its depot package link to be
+# deleted from depot
+
+%test15 = (label  => 'Deluxe multiple site volume opt_setup test',
+	   root   => $test_dir,
+	   start  => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/',
+		      'depot/packA-1.0->'.$siteA{'path'}.'/packA-1.0',
+		      'depot/externalPack->'.$siteC{'path'}.'/externalPack',
+		      'bin/externalTest->depot/externalPack/bin/externalTest',
+		      'depot/siteZPack->'.$siteZ{'path'}.'/siteZPack',
+		      'bin/siteZtest->depot/siteZPack/bin/siteZtest'],
+	   end    => ['bin/', 'lib/', 'man/', 'include/', 'info/',
+		      'depot/', 'man/man1/', 'man/man5/', 'man/manl/',
+		      "depot/packA-2.0->".$siteB{'path'}."/packA-2.0",
+		      "depot/packB-2.0->".$siteB{'path'}."/packB-2.0",
+		      "depot/packC-2.0->".$siteB{'path'}."/packC-2.0",
+		      "depot/packX-1.2->".$siteA{'path'}."/packX-1.2",
+		      "depot/packY-4.51->".$siteB{'path'}."/packY-4.51",
+		      'depot/externalPack->'.$siteC{'path'}.'/externalPack',
+		      'bin/hi->depot/packA-2.0/bin/hi',
+		      'lib/test.so->depot/packA-2.0/lib/test.so',
+		      'bin/hiC->depot/packC-2.0/bin/hiC',
+		      'lib/testC.so->depot/packC-2.0/lib/testC.so',
+		      'lib/test2.so->depot/packB-2.0/lib/test2.so',
+		      'include/hiC.h->depot/packC-2.0/include/hiC.h',
+		      'bin/asteroids->depot/packX-1.2/bin/asteroids',
+		      'man/man1/asteroids.1->depot/packX-1.2/man/man1/asteroids.1',
+		      'man/manl/hiC.l->depot/packC-2.0/man/manl/hiC.l',
+		      'bin/space invaders->depot/packY-4.51/bin/space invaders',
+		      'man/man5/space.5->depot/packY-4.51/man/man5/space.5'],
+	   endex  => ['^\.priority$', '^\.exclude$', '^man\/cat.*'],
+	   conf   => $testconfA,
+	   sites  => $testsitesZ,
+	   sitedefs => [\%siteA, \%siteB, \%siteC, \%siteZ],
+	   exclude => "packA-1.0\nexternalPack\nsiteZPack",
+	   priority => "packA-2.0",
+	   action => 'opt_setup',
+	   error_count => 0);
+
+@tests = (\%test0, \%test1, \%test2, \%test3, \%test3a,
+	  \%test4, \%test4b, \%test4c, \%test4d, \%test4e, \%test4f,
+	  \%test4g, \%test4h,
+	  \%test5, \%test6, \%test7,
+	  \%test8, \%test8a, \%test9, \%test10, \%test11,
+	  \%test12, \%test13, \%test13b, \%test14, \%test15);
+
+#####################################################################
+
+
+#########################################################################
+#
+#                                                               init_site
+#
+# input: a reference to a site volume definition
+#
+# init_site reads the definition for a site volume and creates it..
+# this includes the site volume's directory, its package contents, and
+# any per-package .exclude files.
+#
+# returns 1 on success, 0 on failure
+#
+#########################################################################
+
+sub init_site {
+  my ($site_href) = @_;
+
+  my (@site_ary, $pack, @package_files, $file, @excl_ary, $exclusion);
+  local (*OUT);
+
+  if (!create_dir($site_href->{'path'})) {
+    return 0;
+  }
+
+  @site_ary = @{$site_href->{'contents'}};
+
+  foreach $pack (@site_ary) {
+    $path_root = $site_href->{'path'} . '/' . $pack->{'name'};
+    create_dir($path_root);
+
+    @package_files = @{$pack->{'files'}};
+
+    foreach $file (@package_files) {
+      if ($file =~ /\/$/) {
+	create_dir($path_root . '/' . $file);
+      } else {
+	if (!create_dir(extractdir("$path_root/$file"))) {
+	  return 0;
+	}
+
+	touch("$path_root/$file");
+      }
+    }
+
+    if (defined $pack->{'excludes'}) {
+      @excl_ary = @{$pack->{'excludes'}};
+
+      if (!open(OUT, ">$path_root/.exclude")) {
+	print "Error, could not create .exclude file in $path_root\n";
+	return 0;
+      }
+
+      foreach $exclusion (@excl_ary) {
+	print OUT "$exclusion\n";
+      }
+
+      close(OUT);
+    }
+  }
+
+  return 1;
+}
+
+#########################################################################
+#
+#                                                              setup_test
+#
+# input: a reference to one of our test descriptions
+#
+# setup_test does everything required to create a test environment for
+# a given test, including creating a fresh directory structure.
+#
+#########################################################################
+
+sub setup_test {
+  my ($href) = @_;
+
+  my ($label, $rootdir, $startary, $label, $element, $newpath);
+
+  $label = $href->{'label'};
+  $rootdir = $href->{'root'};
+  $startary = $href->{'start'};
+
+  # necessary because File::Path::rmtree() won't allow deleting a
+  # directory our cwd is in
+
+  chdir("/");
+  killdir($rootdir);
+
+  create_dir($rootdir);
+  chdir($rootdir);
+
+  if (defined $href->{'sitedefs'}) {
+    @site_ary = @{$href->{'sitedefs'}};
+
+    foreach $site (@site_ary) {
+      if (!init_site($site)) {
+	return 0;
+      }
+    }
+  }
+
+  foreach $element (@$startary) {
+
+    if ($rootdir =~ /\/$/) {
+      $newpath = $rootdir . $element;
+    } else {
+      $newpath = $rootdir . "/" . $element;
+    }
+
+    if ($newpath =~ /->/) {
+      ($before, $after) = split /->/, $newpath;
+
+      if (!create_dir(extractdir($before))) {
+	return 0;
+      }
+
+      if ($after =~ /\/$/) {
+	$after = substr($after,0,length($after)-1);
+      }
+
+      if ($after !~ /^\//) {
+	$after = $href->{'root'} . "/" . $after;
+      }
+
+      if (!symlink($after, $before)) {
+	print "Error, could not create symlink($after, $before) in setup for " . $href->{'label'} . "\n";
+	return 0;
+      }
+    } else {
+      if ($newpath =~ /\/$/) {
+	if (!create_dir($newpath)) {
+	  return 0;
+	}
+      } else {
+	if (!create_dir(extractdir($newpath))) {
+	  return 0;
+	}
+
+	touch($newpath);
+      }
+    }
+  }
+
+  killdir($test_etc);
+  create_dir($test_etc);
+
+  if (!open(OUT, ">$test_etc/opt.config")) {
+    print "Couldn't open $test_etc/opt.config\n";
+    return 0;
+  }
+  print OUT $href->{'conf'};
+  close(OUT);
+
+  if (!open(OUT, ">$test_etc/sites")) {
+    print "Couldn't open $test_etc/sites\n";
+    return 0;
+  }
+  print OUT $href->{'sites'};
+  close(OUT);
+
+  killdir($test_logdir);
+  create_dir($test_logdir);
+
+  if (defined $href->{'priority'}) {
+    if (!open(OUT, ">$test_dir/.priority")) {
+      print "Couldn't open $test_dir/.priority\n";
+      return 0;
+    }
+    print OUT $href->{'priority'};
+    print OUT "\n";
+    close(OUT);
+  }
+
+  if (defined $href->{'exclude'}) {
+    if (!open(OUT, ">$test_dir/.exclude")) {
+      print "Couldn't open $test_dir/.exclude\n";
+      return 0;
+    }
+    print OUT $href->{'exclude'};
+    print OUT "\n";
+    close(OUT);
+  }
+
+  return 1;
+}
+
+#########################################################################
+#
+#                                                         exclusion_check
+#
+# input:
+#	a path string
+#
+#	a reference to a test definition
+#
+# This method returns 1 if the passed path element is excluded by the
+# endex array in the test definition.  This method treats the elements
+# in the endex array as regular expressions.
+#
+#
+#########################################################################
+
+sub exclusion_check {
+  my ($path, $test_href) = @_;
+
+  my (@ary, $element);
+
+  @ary = @{$test_href->{'endex'}};
+
+  foreach $element (@ary) {
+    if ($path =~ /$element/) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+#########################################################################
+#
+#                                                        unexpected_check
+#
+# input:
+#	a path string
+#
+#	a reference to a test definition
+#
+#	a reference to a hash mapping directory and path element names
+#	to a target (if they should be links) or to empty string if
+#	they are physical directories and files.
+#
+# unexpected_check is designed to recurse on the filesystem under the
+# test_dir base specified in $test_href, looking at every file and
+# directory under that tree.  unexpected_check is responsible for
+# making sure that we do, indeed, expect to see everything that we
+# find.. if we find something that we don't expect to see,
+# unexpected_check will catch that and report it as an error.
+#
+# unexpected_check is thus complementary to expected_check, which is
+# responsible for making sure we do positively find everything we want
+# to see.  If the directory tree under the $test_href->{'root'} was
+# wholly empty, unexpected_check wouldn't complain at all, because we
+# would not see any files or directories that we didn't expect to see.
+#
+# Get it?
+#
+# returns a count of the number of errors detected during the recursive
+# directory check.
+#
+#########################################################################
+
+sub unexpected_check {
+  my ($path, $test_href, $end_href) = @_;
+
+  local(*DIR);
+  my($local_path, @elements, $element, $target, $failed, $desired_target, $error_count);
+
+  $error_count = 0;
+
+  chdir($test_href->{'root'});	# make sure we're operating out of the test root
+
+  $local_path = $path;
+  if ($local_path eq "") {
+    $local_path = ".";
+  }
+
+  opendir(DIR, $local_path) || return 0;
+  @elements = grep (!/^\.\.?$/, readdir(DIR));
+  closedir(DIR);
+
+  # make sure we have base-qualified paths
+
+  if ($path ne "") {
+    @elements = map { $path . $_ } @elements;
+  }
+
+  foreach $element (@elements) {
+    if (-d $element && !-l $element) {
+      $element = $element . "/";
+    }
+
+    if (exclusion_check($element, $test_href)) {
+      next;
+    }
+
+    if (-l $element) {
+      $target = resolve($test_href->{'root'} . "/" . $local_path, readlink($element));
+
+      if (!defined $end_href->{$element}) {
+	print "Error, found unexpected symlink $element in test " . $test_href->{'label'} . "\n";
+	print "Unexpected symlink points to $target\n\n";
+	$error_count++;
+	next;
+      }
+
+      if ($end_href->{$element} eq "") {
+	print "Error, found unexpected symlink $element in test " . $test_href->{'label'} . "\n";
+	print "Was expecting a file, not a symlink pointing to $target\n\n";
+	$error_count++;
+	next;
+      }
+
+      if ($end_href->{$element} =~ /^\//) {
+	$desired_target = $end_href->{$element};
+      } else {
+	$desired_target = $test_href->{'root'} . "/" . $end_href->{$element};
+      }
+
+      if ($desired_target =~ /\/$/ && $target !~ /\/$/) {
+	$target .= "/";
+      }
+
+      if ($target ne $desired_target) {
+	print "Error, symlink target error in test " . $test_href->{'label'} . "\n";
+	print "symlink $element should point to $desired_target, but instead points to\n";
+	print "$target.\n\n";
+
+	if (0) {
+	  print "\$element is $element\n";
+	  print "readlink(\$element) is " . readlink($element) . "\n";
+	  print "\$local_path is $local_path\n";
+	  print "make_absolute(\$local_path) is " . make_absolute($local_path) . "\n";
+	}
+
+	$error_count++;
+      }
+
+      next;
+    }
+
+    # okay, we've handled the symlink case.. now, is this something we
+    # weren't expecting?
+
+    if (!defined $end_href->{$element}) {
+      if ($element =~ /\/$/) {
+	print "Error, found unexpected directory $element in test " . $test_href->{'label'} . "\n\n";
+      } else {
+	print "Error, found unexpected item $element in test " . $test_href->{'label'} . "\n\n";
+      }
+
+      $error_count++;
+      next;
+    }
+
+    # now we've got a file or directory where we expected it.. but
+    # what if what we were expecting really was a symlink?  That
+    # should only happen for files, since if $element is a directory
+    # we'll have suffixed a trailing /, and we don't expect to have
+    # any symlink definitions look like 'dir/name/->target'..
+
+    if ($end_href->{$element} ne "") {
+      if ($end_href->{$element} =~ /^\//) {
+	$desired_target = $end_href->{$element};
+      } else {
+	$desired_target = $test_href->{'root'} . $end_href->{$element};
+      }
+
+      print "Error, symlink mismatch in test " . $test_href->{'label'} . "\n";
+      print "File $element was expected to be a symlink pointing at $desired_target.\n\n";
+
+      $error_count++;
+      next;
+    }
+  }
+
+  # okay, we've finished checking this level.. look to see about recursion
+
+  foreach $element (@elements) {
+    if (-d $element && !-l $element) {
+
+      # only recurse if we're not excluding
+
+      if (!exclusion_check($element, $test_href)) {
+	$error_count = $error_count + unexpected_check($element, $test_href, $end_href, $exclusion_href);
+      }
+    }
+  }
+
+  return $error_count;
+}
+
+#########################################################################
+#
+#                                                          expected_check
+#
+# input: a reference to one of our test descriptions
+#
+# expected_check iterates over the list of expected results for a
+# test and makes sure that each expected item affirmatively exists.
+#
+# this is a complementary function to the unexpected_check, which makes
+# sure that we don't have anything we didn't expect
+#
+# returns a count of the number of errors found
+#
+#########################################################################
+
+sub expected_check {
+  my ($test_href) = @_;
+
+  my ($error_count, @end_ary, $item, $before, $after, $itempath);
+
+  $error_count = 0;
+
+  @end_ary = @{$test_href->{'end'}};
+
+  foreach $item (@end_ary) {
+    if ($item =~ /->/) {
+      ($before, $after) = split /->/, $item;
+
+      $itempath = $test_href->{'root'} . "/" . $before;
+
+      if ($after =~ /^\//) {
+	$desired_target = $after;
+      } else {
+	$desired_target = $test_href->{'root'} . "/" . $after;
+      }
+
+      # We're only going to complain if what we expect to see does not
+      # exist in any form.  If what we're expecting did exist but in
+      # an inappropriate form, unexpected_check will have caught that
+      # and complained.
+
+      if (!-e $itempath && !-l $itempath) {
+	print "Error, symlink missing in test " . $test_href->{'label'} . "\n";
+	print "symlink $itempath is supposed to point to $desired_target\n\n";
+	$error_count++;
+	next;
+      }
+    } else {
+      $itempath = $test_href->{'root'} . "/" . $item;
+
+      if ($itempath =~ /\/$/) {
+	# directory
+
+	if (!-e $itempath) {
+	  print "Error, directory missing in test " . $test_href->{'label'} . "\n";
+	  print "$itempath was supposed to be a directory, but does not exist.\n\n";
+	  $error_count++;
+	  next;
+	}
+      } else {
+	# file
+
+	if (!-e $itempath) {
+	  print "Error, file missing in test " . $test_href->{'label'} . "\n";
+	  print "file $itempath does not exist.\n\n";
+	  $error_count++;
+	  next;
+	}
+      }
+    }
+  }
+
+  return $error_count;
+}
+
+#########################################################################
+#
+#                                                                run_test
+#
+# input: a reference to one of our test descriptions
+#
+# run_test runs the test
+#
+# returns 1 on success, 0 on failure
+#
+#########################################################################
+
+sub run_test {
+  my ($href) = @_;
+
+  my ($command, $params, @end_ary, $item, $before, $after, %end_hash, $error_count);
+
+  $error_count = 0;
+
+  $command = $href->{'action'};
+
+  $params = $href->{'params'};
+
+  if (defined $params) {
+
+    print "Running $command with param $params\n";
+
+    if (system($perlloc, "$RealBin/" . $command, "-f$test_etc/opt.config", $params)) {
+      print "Could not execute $command with $perlloc.\n";
+      return 0;
+    };
+  } else {
+    if (system($perlloc, "$RealBin/" . $command, "-f$test_etc/opt.config")) {
+      print "Could not execute $command with $perlloc.\n";
+      return 0;
+    };
+  }
+
+  # check to make sure we don't have anything in the test tree that we
+  # don't expect to be there
+
+  @end_ary = @{$href->{'end'}};
+
+  foreach $item (@end_ary) {
+    if ($item =~ /->/) {
+      ($before, $after) = split /->/, $item;
+      $end_hash{$before} = $after;
+    } else {
+      $end_hash{$item} = "";
+    }
+  }
+
+  $error_count = unexpected_check("", $href, \%end_hash);
+
+  # now check to make sure that we affirmatively do have everything in
+  # the test tree that we expect
+
+  $error_count = $error_count + expected_check($href);
+
+  if ($error_count != $href->{'error_count'}) {
+    if ($error_count > $href->{'error_count'}) {
+      print "Test " . $href->{'label'} . " had too many errors.\n";
+    } else {
+      print "Test " . $href->{'label'} . " had too few errors.\n";
+    }
+
+    print "Target errors: " . $href->{'error_count'} . ", Actual errors: $error_count\n";
+    return 0;
+  } else {
+    print "Success\n";
+    return 1;
+  }
+}
+
+#####################################################################
+#
+# mkdir $test_dir
+# mkdir $test_dir/depot
+#
+# touch a bunch of stuff
+# run opt_depot
+# test
+#####################################################################
+
+$test_failures = 0;
+$tests_run = 0;
+
+foreach $test (@tests) {
+  print "\n------------------------------------------------------------\n";
+  print "Running " . $test->{'action'} . " test '" . $test->{'label'} . "'\n\n";
+  setup_test($test);
+
+  if (!run_test($test)) {
+    $test_failures++;
+
+    print "\n";
+    if (askyn("There were failures encountered.. do you want to stop testing and examine the test tree in $test_root?")) {
+      $tests_run++;
+      print "\n------------------------------------------------------------\n";
+      print "Tests Ran: $tests_run\tTests Succeeded: " . ($tests_run-$test_failures) . "\tTests Failed: " . $test_failures . "\n";
+      exit 1;
+    }
+  }
+  $tests_run++;
+}
+
+print "\n------------------------------------------------------------\n";
+print "Tests Ran: $tests_run\tTests Succeeded: " . ($tests_run-$test_failures) . "\tTests Failed: " . $test_failures . "\n";
+
+if ($clean_up) {
+  if (!$test_failures) {
+    chdir("/");			# to prevent blocking killdir()
+    killdir($test_root);
+  } else {
+    print "\n";
+    if (!askyn("There were failures encountered.. do you wish to retain the test tree in $test_root?")) {
+      chdir("/");
+      killdir($test_root);	# to prevent blocking killdir()
+    }
+  }
+}

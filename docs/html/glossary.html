@@ -1,0 +1,261 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+<HEAD>
+   <TITLE>opt_depot 2.0 Glossary</TITLE>
+   <META NAME="GENERATOR" CONTENT="Mozilla/3.01Gold (X11; I; SunOS 5.5.1 sun4d) [Netscape]">
+</HEAD>
+<BODY TEXT="#000000" BGCOLOR="#C0C0C0" LINK="#B22222" VLINK="#000080" ALINK="#FF0000" BACKGROUND="images/chalk.gif">
+
+<P><!-- Changed by: Jon NameServer, 22-Aug-1995 --><!-- Changed by: CSD Network Services Account, 11-Feb-1997 --><!-- Changed by Erik, 22-April-1997--></P>
+
+<CENTER><TABLE BORDER=15 CELLSPACING=0 CELLPADDING=0 HEIGHT="15%" >
+<TR>
+<TD><FONT SIZE=+4>&nbsp;Opt_depot <FONT COLOR="#B22222">2.0 </FONT><FONT COLOR="#000000">Glossary
+</FONT></FONT></TD>
+</TR>
+</TABLE></CENTER>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<P>22 August 1995 <I>Revised April 20 1997</I></P>
+
+<P>Jonathan Abbey -- jonabbey@arlut.utexas.edu </P>
+
+<P>Erik&nbsp;Grostic -- grostic@arlut.utexas.edu</P>
+
+<OL>
+<LI><A HREF="#archive">Central Package Archive</A></LI>
+
+<LI><A HREF="#per-exclude">Per-Package exclusion files</A></LI>
+
+<LI><A HREF="#depot">Depot Directory</A></LI>
+
+<LI><A HREF="#base">Software Base Directory</A></LI>
+
+<LI><A HREF="#.exclude">.exclude file</A></LI>
+
+<LI><A HREF="#priority">.priority file</A></LI>
+
+<LI><A HREF="#sites">sites file</A></LI>
+</OL>
+
+<P>
+<HR></P>
+
+<H3><A NAME="archive"></A>Central Package Archive</H3>
+
+<P>The Central Package Archive is any location where packages are physically
+installed for remote access via NFS. These packages are linked into the
+Local Depot Directory by opt_link for access by opt_depot. The Central
+Package Archive contains a set of subdirectories, one for each package
+that you wish to provide access to. Each package should contain a bin directory,
+a lib directory (if appropriate), include, man, man/manl, etc. Basically
+each package is a miniature /usr/local unto itself. </P>
+
+<P>At ARL:UT we have /v/site/os in addition to /v/site/packages, for software
+that we want to make available to our NFS clients, but which we want users
+to have to take affirmative action to make local copies that will be available
+even if the Central Package Archive server is not available. </P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H3><A NAME="per-exclude"></A>Per-Package Exclusion Files</H3>
+
+<P>Packages in the Central Package Archive may contain .exclude files,
+allowing packages to exclude earlier versions of itself or other packages.
+The easiest way to update software on the network is to add the currently
+installed version of the software package to the new package's own <I>.exclude</I>
+file. The current links to the older version will be removed and the new
+package will be given clearance to be installed.</P>
+
+<P>A per-package exclusion file for netscape-4.0 might look something like
+this:</P>
+
+<PRE>  netscape-2.0
+  netscape-3.01b1
+  netscape-3.01b2
+  netscape-3.01
+
+</PRE>
+
+<P>
+<HR></P>
+
+<H3><A NAME="depot"></A>Depot Directory</H3>
+
+<P>This directory will be where all software installed through opt_depot
+is configured to run from. Each system you want to run client off of opt_depot
+should have its own copy of this directory. </P>
+
+<P>On our system, this directory is called /opt/depot. We install our software
+so that packages look for their files under /opt/depot/&lt;packagename&gt;.
+For instance, we compile GNU Emacs 19.29 so that it expects to see its
+files under /opt/depot/emacs-19.29/{bin|lib|include|info} and so forth.
+</P>
+
+<P>The opt_link script will make symbolic links from your Local Depot Directory
+to your Central Package Archive. Once this is done, the opt_depot script
+will make symbolic links in your Local Base Directory, which is where user's
+paths (PATH, MANPATH, LD_LIBRARY_PATH) will find the software that you
+install. </P>
+
+<P>
+<HR></P>
+
+<H3><A NAME="base"></A>Software Base Directory</H3>
+
+<P>This is the directory that will contain the bin, man, lib, include,
+and info directories that you want opt_depot to manage. In our case, we
+have opt_depot managing /opt. Opt_depot can work cooperatively with files
+already existing in /opt/{bin|man| lib|include|info}. Opt_depot will add
+and remove symbolic links from these directories as appropriate for the
+packages that you install or remove. The Base Directory need not be in
+any special place relative to your Local Depot Directory, but the Local
+Depot Directory must be in the same location across all systems using your
+packages. </P>
+
+<P>The Base Directory can contain .exclude and .priority files which are
+used to exclude unwanted pieces of software and to specify how conflicts
+will be resolved during the opt_depot linking process, respectively. </P>
+
+<P>The man pages, diagrams and documentation that come with the tar file
+explain things in detail. </P>
+
+<P>The main thing you have to remember is that you must compile and install
+your software so that it will look for its files through &lt;Local Depot
+Directory&gt;/&lt;PackageName&gt;. This is what gives the packages position
+independence, and allows you the choice of installing locally or on a Central
+Package Archive. </P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H3><A NAME=".exclude"></A>Exclusion File</H3>
+
+<P>Opt_depot allows the system administrator to remove installed software
+packages through the use of a <B><I>.exclude</I></B> file. This file contains
+a list of packages that opt_depot and opt_link will ignore -- that is to
+say no package contained in the .exclude file will have links to it built
+by opt_depot or opt_link. opt_clean will remove any links to packages listed
+in the .exclude file.</P>
+
+<P>Files included in the list can either start with the package name (e.g.
+opt_depot/bin/opt_clean) or be absolute pathnames (e.g. /opt/depot/opt_depot/bin/opt_clean),
+or be the the names of the packages themselves.</P>
+
+<P>Package names should be the name of the package as listed under the
+depot directory and should contain no slashes. Comments may follow a pound
+sign placed at the beginning of a line. </P>
+
+<P><I>Example </I>of a .exclude file:</P>
+
+<PRE>   # I'm a .exclude file
+
+   gcc-2.63
+   netscape-1.0
+   tcl
+   /opt/depot/tiger/lib/c
+   java-1.0/bin
+
+</PRE>
+
+<P><I>Location:</I> By default, opt_depot and opt_link look for the .exclude
+file under the software base directory.</P>
+
+<P><I><A HREF="#per-exclude">Per-Package Exclusions</A></I>: Each package
+may have its own .exclude file that contains a list of any earlier, outdated
+versions that should be excluded.</P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H3><A NAME="priority"></A>Priority File</H3>
+
+<P><B><I>.priority</I></B> is a list of packages and package files in order
+of <I>decreasing</I> priority. It permits the user to specify which packages
+or files are more important when name conflicts arise. </P>
+
+<P>If two files conflict then the priority list is searched. If either
+of the files or directories containing them are found then a comparison
+is made to determine which is of higher priority. If a file or its package
+is not contained in the priority list then it has the lowest priority.
+If two files conflict and neither are found in the list then the first
+one linked remains. </P>
+
+<P>The format of<I> .priority</I> is the same as <I>.exclude</I>, meaning
+that any files included in the list can either start with the package name
+(e.g. opt_depot/bin/opt_clean) or be absolute pathnames (e.g. /opt/depot/opt_depot/bin/opt_clean),
+or be the the names of the packages themselves, if you want to assign relative
+priority of all files in a pair of packages. </P>
+
+<P>Package names should be the name of the package as listed under the
+depot directory and should contain no slashes. Comments may follow a pound
+sign placed at the beginning of a line. </P>
+
+<P>A typical .priority file might look something like this:</P>
+
+<PRE>  # I'm the .priority file
+
+  ghostscript-3.51
+  xv-3.10a
+  X11R6
+  X11R5
+  SUNWste/bin
+  imsl/bin/
+</PRE>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<H3><A NAME="sites"></A>Sites File</H3>
+
+<P>One of the features introduced in opt_depot 2.0 is the addition of <I>multiple
+</I>package archives. Administrators can now exercise the option of having
+packages in several different locations be linked into the depot directory.
+There are also several methods for prioritizing the separate archives.</P>
+
+<P>Opt_link uses the sites file to specify the locations of the package
+archives and their associated labels. Each entry in the sites file is in
+the form of <I>&lt;label&gt; &nbsp;&lt;location of archive&gt;.</I></P>
+
+<P>The labels are used for excluding packages from a specific package archive.
+An entry in the .exclude file can have the form <I>&lt;label&gt;:&lt;package-name&gt;</I>,
+which indicates that only the package from that specific labeled archive
+should be excluded. </P>
+
+<P><I>For Example,</I> say the following entries appear in the sites file:</P>
+
+<DD><I>Global &nbsp;/v/site/packages</I></DD>
+
+<DD><I>Local &nbsp;/usr/local/packages</I></DD>
+
+<P>If you only want to exclude a particular version of netscape contained
+in /v/site/packages, and a version of emacs contained in /usr/local/packages,
+then you might include some entries in the exclude file that looked like
+this:</P>
+
+<PRE>
+  # It's the .exclude file
+
+  Global:netscape-4.0
+  Local:emacs-19.33
+
+</PRE>
+
+<P><I>Quick syntax note</I>: When specifying a labeled exclusion a colon
+must come between the label and the package-name, whereas there is only
+whitespace between the label and the archive location in a sites file entry.</P>
+
+<P><I>Location</I>: The default location of the sites file is under the
+/etc subdirectory of the opt_depot package.</P>
+
+<P>
+<HR WIDTH="100%"></P>
+
+<ADDRESS><A HREF="mailto:opt-depot@mail.utexas.edu">opt-depot@mail.utexas.edu</A>
+-- Last Updated 20 May 1997</ADDRESS>
+
+</BODY>
+</HTML>

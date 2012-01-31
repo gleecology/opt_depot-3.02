@@ -1,0 +1,189 @@
+opt_depot README
+----------------
+
+Jonathan Abbey <jonabbey@arlut.utexas.edu>
+Version: $Revision: 1.6 $
+Last Mod Date: $Date: 2009/06/02 22:36:13 $
+
+What Is It
+----------
+
+The opt_depot suite is a set of perl scripts for managing software
+installed using the standard GNU autoconf --prefix install pattern.
+If you can install a piece of software into a single directory with
+bin, lib, man, include, and other subdirectories, the opt_depot
+scripts can manage integrating that software into your system's
+standard PATH, MANPATH, and LD_LIBRARY_PATH locations.
+
+The suite is intended to work with a number of standard directories:
+
+  base -  The root of a directory containing symbolic links.. usually
+          something like /opt or /usr/local.  Subdirectories under
+          base will include bin, lib, man, include, and so forth.  The
+          opt_depot suite creates symbolic links in these subdirectories
+          pointing to files from your installed packages
+
+  depot - Your package directory.  Usually something like /opt/depot or
+          /usr/local/depot.  The subdirectories of your depot directory
+          are your installed packages.  So /opt/depot might contain a
+          directory called xemacs-21.7, which in turn will contain a
+          bin subdirectory, a lib subdirectory, a man subdirectory, etc.
+
+The idea is that you can place your base bin directory into your PATH
+environment variable, your base lib directory into your
+LD_LIBRARY_PATH environment variable, and your base man directory into
+your MANPATH environment variable.  The opt_depot scripts will manage
+symbolic links in your base directories to ensure that anything
+installed under your depot directory will be properly available
+through those standard system paths.
+
+You don't even have to create a new base directory or modify your
+users' environment variables, if you don't want to.. all of the
+opt_depot scripts are designed to ignore files or links that it did
+not create.  The opt_depot scripts work beautifully with manually
+installed packages or files, without difficulties.
+
+The suite consists of the following scripts:
+
+  opt_depot - creates links from base directory to package files
+  opt_clean - removes obsolete or unwanted links to package files
+  opt_link  - manages links to NFS-mounted package archives
+  opt_setup - runs the above three scripts in sequence
+  opt_nuke  - removes all links created by opt_depot
+
+See the contents of the docs directory and the individual man pages
+for more details.
+
+What's The History? / What's New?
+---------------------------------
+
+The opt_depot scripts were originally written in 1993 at Applied
+Research Laboratories and licensed for use on the Internet under a
+somewhat restrictive license.  Version 3.0 marks the first official
+release under the GNU General Public License.  
+
+In addition, version 3.0 features the following changes:
+
+  Modular rewrite using Perl 5 features for easier development and maintenance
+
+  Tons of bug fixes, particularly with recursive directory unification
+
+  A better config file format, including quotation rules for file and
+  directory names so that pathnames with whitespace can be used
+
+  Better logging
+
+  More consistent command line parameter handling
+
+  Much better setup/install process
+
+  New test/validation script for regression testing
+
+Recent changes:
+
+2 June 2009: Version 3.01 fixes an incompatibility in the test_opt
+             validation suite that caused it to fail when run under
+             modern versions of Perl.
+
+How Do I Validate Everything?
+-----------------------------
+
+If you want to check to see if the opt_depot scripts are working
+properly on your system before installing, you can run test.sh.
+
+The test.sh script will create a bunch of test configurations under
+/tmp/opt_suite-3.0, and run a variety of combinations of the opt_depot
+scripts on them to make sure that everything is working as it should.
+
+If you see any failures reported, send us an email and let us know
+about it.
+
+How Do I Install?
+-----------------
+
+Short answer: Run setup.sh
+
+Long answer: 
+
+setup.sh will ask you a bunch of questions to guide you through the
+installation process, after which time it will create a depot-style
+package to install the opt_depot scripts into.  setup.sh doesn't
+require any special privileges to run, but you may want to have
+elevated privileges if you want to use the opt_depot suite to manage a
+system-wide directory for your users.
+
+Most of the questions that the setup.sh script will ask you are pretty
+self-explanatory, but there are a few worth talking about.
+
+First, setup.sh will ask you if you want to edit the 'link directory
+list'.  This is referring to those directories located under your base
+directory that you want the opt_depot scripts to manage.. like bin,
+include, info, lib, man.  You might add additional directories to this
+list if you wanted to manage an sbin directory under your base
+directory, for instance.
+
+Most people won't need to worry about this at first, and you can just
+hit Q to continue with the installation process.
+
+Second, setup.sh will ask you if you want the opt_depot scripts to
+perform 'recursive directory unification'.  This is referring to an
+optional ability of the opt_depot and opt_clean scripts to create
+entirely new subdirectories under your base bin, lib, include (and
+etc.) directories to contain symbolic links pointing to different
+packages.
+
+For instance, if you think you might need to have an /opt/include/X11
+directory that contains symbolic links to include files from separate
+depot packages, you'd want to say yes to this.
+
+Generally speaking, it's safe to accept the default Yes here.
+
+If you do say Yes, setup.sh will ask you if you want to have a
+restricted list of subdirectories for recursive directory
+unification.. if you say 'No', the opt_depot scripts will always
+perform directory unification and folding as necessary.  If you say
+'Yes', you will be given an option to specify what subdirectories
+should be treated in this way.  For instance, you might want to only
+have your include and lib subdirectories recursively managed.
+
+Finally, setup.sh will ask you if you want to provide some NFS package
+archives.  This is an optional feature which you may find useful if
+you want to share depot-style packages to a set of workstations from a
+central server.  If you want to investigate this, please read the more
+extensive documentation under the doc directory.  Most people will
+want to just hit Q to continue when faced with this question.
+
+Copyright and Contact Information
+---------------------------------
+
+Copyright (C) 1993-2009 The University of Texas at Austin.
+
+Contact information
+
+Author Email: opt-depot@arlut.utexas.edu
+Email mailing list: opt-depot-users@arlut.utexas.edu
+
+US Mail:
+
+Computer Science Division
+Applied Research Laboratories
+The University of Texas at Austin
+PO Box 8029, Austin TX 78713-8029
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+02111-1307, USA
+
+Written by: Computer Science Division, Applied Research Laboratories,
+University of Texas at Austin  opt-depot@arlut.utexas.edu
