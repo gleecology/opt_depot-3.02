@@ -1,0 +1,459 @@
+#!/usr/bin/env perl
+
+#
+# vim: ft=perl
+#
+
+# this is a very vanilla perl; Getopt::Long is std. > 5.8
+
+# TODO:
+#  make the package commented out in the opt_depot EXCLUDE file
+#  dependencies
+
+package Despotic;
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Data::Dumper;
+
+$Data::Dumper::Sortkeys++;
+
+my ($data, $stat);
+
+
+my $PRI         = '.apriori',
+my $DATE        = scalar localtime;
+
+my ($NOOP,$DEBUG);
+
+our ($DEPOT,$PKG,$SRC_URL,%Runner,%TMPL,$Default, $BACKUP, $OPT_BASE);
+
+our $VERSION    = '1.0'; 
+
+my %opts = (
+    'provision'       => 'run a package',
+    'p|package=s'   => 'target package name; format usually pkg-version',
+    'depot=s'       => '/path/to/depot; default=' .(  $ENV{DEPOT} || ''),
+    'first-time'    => 'this is the first time ever!',
+    'n|noop'        => 'show the config used; no actual requests made',
+    'v|verbose'     => 'more cowbell',
+    'h|help'        => 'here we are',
+    'r=s'           => 'run a specific operation (advanced)', 
+    'src_url=s'     => 'a source URL to seed with',
+    'backup=s'      => 'backup to <ABSOULTE_PATH_TO_DIR> for files or </path/to/file.tar.gz> of file of .apriori/.git/README data (ie. for import to git)',
+);
+
+
+
+sub _warns {
+    my ($m,$d) = @_;
+    $m or return;
+    print STDERR $m, "\n";
+    $d or return;
+    print STDERR ref $d
+        ? Data::Dumper->Dump([$d])
+        : $d;
+};
+
+
+sub usage {
+    _warns( shift ) if @_;
+    _warns("usage $0 <OPTS>\n options include: ", \%opts);
+    _warns("list of runners", \%Runner );
+    _warns("current std. settings ", $Default );
+}
+
+
+sub main {
+    my $o  = shift || {};
+
+    my @ok = keys %opts;
+    GetOptions( $o, @ok );
+
+
+    $PKG    = $o->{p} || $o->{package};
+    $DEPOT  = $o->{depot} || $ENV{DEPOT};
+    $DEBUG  = $o->{v}  || $o->{verbose} || $ENV{DEBUG}  || 0;
+    $NOOP   = $o->{n}  || $o->{noop} || $ENV{NOOP};
+    $BACKUP = $o->{backup} || undef;
+    $SRC_URL= delete $o->{src_url} || ( "http://example.com/path/to/" . ( $PKG || 'pkg-1.0.tgz' ) );
+    $OPT_BASE= ( $DEPOT =~ m@(.*/)\S+/?$@ ) ?  $1 : '';
+
+
+
+    $Default = {
+        DEPOT   => $DEPOT,
+        OPT_BASE=> $OPT_BASE,
+        PKG     => $PKG,
+        PRI     => $PRI,
+        DATE    => $DATE,
+        NOOP    => $NOOP,
+        DEBUG   => $DEBUG,
+        SRC_URL => $SRC_URL,
+        BACKUP  => $BACKUP,
+    };
+
+    usage()
+        and return if ( $o->{h} or $o->{help} );
+
+    $DEBUG and _warns('default', $Default );
+
+    if ( grep { $Runner{$_} } keys %$o ){ 
+        $Runner{$_}->($o)  for grep { $Runner{$_} } keys %$o;
+    }elsif( my $r = $o->{r} ){ 
+        $Runner{$r} and  $Runner{$r}->($o); 
+    }else{
+        usage()
+    }
+
+    _warns("stats: ", $stat ) if $stat;
+}
+
+
+
+sub _runs {
+    for (@_ ) {
+        if ($NOOP){
+          _warns( "cmd: $_ ");
+        }else{ 
+            $DEBUG and _warns( "cmd: $_ ");
+            _warns( qx{ $_  } );
+        }
+    }
+}
+
+
+
+
+sub _write {
+    my ($f,$data) = @_;
+
+    $data =~ s!%%(.*?)%%!$Default->{$1} || ''!eg;
+
+    $DEBUG and _warns(" write file: $f" );
+
+    if ( -f $f ) {
+        _warns( "$f  -- file exists - skipping"  );
+        return;
+    }
+
+
+    ( $DEBUG > 1 ) and _warns(" write file: $f\n\nAdding data: $data\n" );
+    $NOOP  and return;
+
+    my $fh;
+    if ( open $fh, '>', $f ) {
+        print $fh $data;
+        close $fh;
+    }else{
+        print STDERR "_write($f) failed: $!\n";
+    }
+}
+
+
+
+#######################################
+# Runner ops
+#######################################
+
+$Runner{'install-all'} = sub {
+    $DEPOT      or die "no depot";
+    my %pkg;
+
+    for my $path ( glob( "$DEPOT/*/.apriori/do.install" ) ) {
+        $path =~ m!$DEPOT/(.*?)/.apriori! or next;
+        my $p = $1;
+        $pkg{$p}++;
+        if (  -f "$path/deps.txt" ) {
+            map { $pkg{$_}++ }  grep { $_ !~ m@^\s*#@ } (`cat $path/deps.txt` );
+        }
+    }
+    # highest goes first!
+    for my $p (sort {$pkg{$b}<=>$pkg{$a} } keys %pkg ) { 
+        _warns("starting install package: $p " );
+        my $f = "$DEPOT/$p/.apriori/do.install";
+        _runs( qq! chmod u+x $f && ./$f && chmod u-x $f ! );
+    }
+    1;
+};
+
+
+
+#
+#
+#
+$Runner{'first-time'} = sub {
+    $DEPOT      or die "no depot";
+
+    # confirm this 
+    print "currently using DEPOT:$DEPOT\n \t\tis ^^this correct? [y/n]: ";
+    my $ack = <STDIN>; 
+    $ack =~ /^\s*n/i and die " exiting; check ENV{DEPOT} and/or --depot flag";
+    if (! -d $DEPOT ) { 
+        print STDERR "creating dir $DEPOT\n", 
+        _runs( qq! mkdir -p $DEPOT ! );
+    }
+
+    if ( ! -d "$OPT_BASE/bin" ) {
+        _runs( qq! cd $OPT_BASE; mkdir -p bin include lib man sbin  ! );
+    }
+
+
+    # hard coded for now. Took 'em almost 10 years to do a new version.
+    my $pkg     = 'opt_depot-3.02';
+
+    $Runner{provision}->( { pkg =>  $pkg } );
+     _runs( qq! rm $DEPOT/$pkg/$PRI/do.install ! );
+
+
+    # ghettoMG hack --- ymmmv; but relative paths are the norm here...
+    my @src_find = `find . -name $pkg.tar.gz`;
+    my $src     = shift @src_find
+        or   die "failed to find package $pkg.tar.gz";
+    chomp $src;
+
+    _warns(" trying to install $pkg from src=$src" );
+
+    if ( -f $src ){
+        _warns( qq!CMD:  tar zxvf $src -C $DEPOT ! );
+        _runs( qq! tar zxvf $src -C $DEPOT ! );
+    }else{
+        die "fialed to find src?? looking for $src";
+    }
+
+
+    my $t;
+    if ( $t = "$DEPOT/$pkg/etc/opt.config" and -f "$t.TEMPLATE" ) {
+        my $r = `cat "$t.TEMPLATE"`;
+        if ($r){ 
+            $r =~ s!%%(.*?)%%!$Default->{$1} || ''!eg;
+            _warns( "wrting conf to $t " );
+            ( open(CONF,'>', $t ) and print CONF $r and close CONF )
+                or die "failed to write $t: $!";
+        }
+    }
+    else{
+        _warns( "no template file found; installation is NOT complete" );
+    }
+
+    $Runner{provision}->( { pkg => 'despotic-'.$VERSION  } );
+
+
+
+    if ( my $desp_dir = "$DEPOT/despotic-$VERSION"  ){
+        -d $desp_dir and _runs( qq! mkdir -p $desp_dir/bin !, qq! cp $0 $desp_dir/bin ! );
+        _runs( qq! rm $desp_dir/$PRI/do.install ! );
+    }
+
+    if ( my $f = "$DEPOT/$pkg/bin/opt_depot" ) {
+        -f $f and _runs( qq! $f -v ! );
+    }
+
+    1;
+};
+
+
+
+
+
+
+###########
+$Runner{provision} = sub {
+    my $o       = shift || {};
+
+
+    my $pkg     = $o->{pkg} || $PKG;
+
+    $pkg        or die "no package";
+    $DEPOT      or die "no depot";
+
+    my $dest = "$DEPOT/$pkg";
+    $Default->{DEST} = $dest;
+
+    _runs( qq! mkdir -p $dest/$PRI; mkdir -p $dest/src ! );
+
+    # stuff that goes in the $PRI dir
+    for ( qw( do.install README ) ){ 
+        _write( "$dest/$PRI/$_", $TMPL{$_} );
+    }
+    # stuff that goes in the package dir
+    for ( qw( .gitignore ) ) {
+        _write( "$dest/$_", $TMPL{$_} );
+    }
+    _runs( qq! cd $dest && ln -s ./$PRI/README !);
+
+    1;  
+};
+
+
+
+
+
+###########
+$Runner{backup}  = sub {
+
+    my $dest;
+    my $d = `date +%Y%m%d`; chomp $d;
+    my $file = "DEPOT-$d";
+    my $n =1;
+    my $is_tar = 1;
+
+    # is backup a file.tar.gz? -if so, chop off gz -and make sure path exists. 
+
+    if ( $BACKUP =~ m@(.*/)(\S+?.tar).gz@ ) {
+        -d "$1" or _warns( "detected predetermined file; trying to make new path $1", qx{ mkdir -p $1 } );
+        -d $1 or die "faile to create dir $1; exting";
+        $dest = $1.$2;
+        $n = 0;
+    }elsif(  -d $BACKUP ) {
+        $dest = $BACKUP;
+        $is_tar = 0;
+    }else{
+        _warns( " backup unable to proceed w/o tar.gz file target or existing dir target " );
+        return;
+    }
+
+    for my $path ( glob( "$DEPOT/*" ) ) {
+        -d "$path/.apriori" or next;
+        $path =~ m@$DEPOT/(.*)@ or next;
+        my $p = $1;
+        my $cmd = $is_tar
+            ? qq{  cd $DEPOT &&  tar --exclude=*gz -u -v -f $dest $p/.apriori* $p/README $p/.git* }
+            : qq{  cd $DEPOT &&  rsync --exclude=*gz -av $p/.apriori* $dest/$p; rsync -av $p/README $dest/$p };
+
+        _runs( $cmd );
+    }
+
+    my $do_top = $is_tar
+            ? qq{  cd $DEPOT &&  tar -u -v -f $dest .exclude* EXCLUDE* }
+            : qq{  cd $DEPOT;  for i in .exclude EXCLUDE.txt README .gitignore; do [ -f \$i ] && rsync -av \$i $dest; done };
+
+    _runs( $do_top );
+
+   if ( $is_tar ) {
+         _runs(  qq{ gzip -f $dest } );
+        _warns( "file saved at $dest.gz ") ;
+    }
+
+    1;
+};
+
+
+############
+# TEMPLATES
+#############
+
+
+{
+ my $K = 'do.install';
+ $TMPL{$K} = <<END;
+#!/bin/bash
+
+#
+# $K auto-generated from $0 v.$VERSION on %%DATE%%
+#  this script is the main build script for the package
+#   It is intended as a generic placeholder to build however you see fit (eg. bash, perl, make, whatever!)
+#   as such, it should be left mod 0644 thus manually forcing the issue.
+# 
+
+
+# DEPOT should be set in your ENV; ie.  export=DEPOT=/path/opt/depot
+#
+# mkdir -p \$DEPOT/%%PKG%%/%%PRI%%  \$DEPOT/%%PKG%%/src
+
+if [ ! \$DEPOT ]; then
+    echo "WARNING -- env DEPOT not set; quitting";
+    exit
+fi
+
+PKG=%%PKG%%
+DEST=\$DEPOT/\$PKG
+SRC=\$PKG.tar.gz
+
+cd \$DEST/src
+
+    #
+    # do you need to get the source? 
+    #
+    if [ ! -f \$SRC ]; then 
+        wget http://example.com/\$SRC
+    fi
+
+    tar zxvf \$SRC
+    cd  \$DEST/src/\$PKG
+
+    # 
+    # configure / build / install
+    #
+    echo   "./configure --prefix=\$DEST"            2>&1 |tee log.opts
+    ./configure --prefix=\$DEST                     2>&1 |tee log.conf
+    make                                            2>&1 |tee log.make
+    make install                                    2>&1 |tee log.install
+
+    # document the install in a log
+    for i in opts conf make install; do
+        echo "----log.\$i----"  >> LOG
+        cat log.\$i             >> LOG
+    done
+
+    gzip LOG;
+    cp  LOG.gz \$DEST/%%PRI%%
+
+    cd \$DEST
+
+    # clean up 
+    rm -rf \$DEST/src/
+END
+}
+
+
+
+{
+ my $K ='deps.txt';
+ $TMPL{$K} = <<END;
+#
+# this is a comment
+# add package dependencies to this file, one per line     
+
+END
+}
+
+{
+ my $K ='.gitignore';
+ $TMPL{$K} = <<END;
+#
+# this is a comment
+#
+* 
+! .apriori
+.apriori/LOG.gz
+! .gitignore
+
+END
+}
+
+
+
+
+{
+ my $K ='README';
+ $TMPL{$K} = <<END;
+%%PKG%%/$K
+    created %%DATE%%
+
+END
+}
+
+
+
+
+my $opt = {
+
+};
+
+main($opt);
+
+
+__END__
+

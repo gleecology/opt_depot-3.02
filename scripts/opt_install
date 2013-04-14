@@ -53,6 +53,7 @@ $version = "3.02";
 		"opt_clean",
 		"opt_setup",
 		"test_opt",
+		"despotic",
 		"fixperms");
 
 @mans = ("man/manl/opt_depot.l", "man/manl/opt_link.l",
