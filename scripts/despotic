@@ -21,8 +21,7 @@ $Data::Dumper::Sortkeys++;
 
 my ($data, $stat);
 
-
-my $PRI         = '.apriori',
+my $PRI         = '__apriori';
 my $DATE        = scalar localtime;
 
 my ($NOOP,$DEBUG);
@@ -41,7 +40,7 @@ my %opts = (
     'h|help'        => 'here we are',
     'r=s'           => 'run a specific operation (advanced)', 
     'src_url=s'     => 'a source URL to seed with',
-    'backup=s'      => 'backup to <ABSOULTE_PATH_TO_DIR> for files or </path/to/file.tar.gz> of file of .apriori/.git/README data (ie. for import to git)',
+    'backup=s'      => 'backup to <ABSOULTE_PATH_TO_DIR> for files or </path/to/file.tar.gz> of file of $PRI/.git/README data (ie. for import to git)',
 );
 
 
@@ -161,8 +160,8 @@ $Runner{'install-all'} = sub {
     $DEPOT      or die "no depot";
     my %pkg;
 
-    for my $path ( glob( "$DEPOT/*/.apriori/do.install" ) ) {
-        $path =~ m!$DEPOT/(.*?)/.apriori! or next;
+    for my $path ( glob( "$DEPOT/*/$PRI/do.install" ) ) {
+        $path =~ m!$DEPOT/(.*?)/$PRI! or next;
         my $p = $1;
         $pkg{$p}++;
         if (  -f "$path/deps.txt" ) {
@@ -172,7 +171,7 @@ $Runner{'install-all'} = sub {
     # highest goes first!
     for my $p (sort {$pkg{$b}<=>$pkg{$a} } keys %pkg ) { 
         _warns("starting install package: $p " );
-        my $f = "$DEPOT/$p/.apriori/do.install";
+        my $f = "$DEPOT/$p/$PRI/do.install";
         _runs( qq! chmod u+x $f && ./$f && chmod u-x $f ! );
     }
     1;
@@ -315,12 +314,12 @@ $Runner{backup}  = sub {
     }
 
     for my $path ( glob( "$DEPOT/*" ) ) {
-        -d "$path/.apriori" or next;
+        -d "$path/$PRI" or next;
         $path =~ m@$DEPOT/(.*)@ or next;
         my $p = $1;
         my $cmd = $is_tar
-            ? qq{  cd $DEPOT &&  tar --exclude=*gz -u -v -f $dest $p/.apriori* $p/README $p/.git* }
-            : qq{  cd $DEPOT &&  rsync --exclude=*gz -av $p/.apriori* $dest/$p; rsync -av $p/README $dest/$p };
+            ? qq{  cd $DEPOT &&  tar --exclude=*gz -u -v -f $dest $p/$PRI* $p/README $p/.git* }
+            : qq{  cd $DEPOT &&  rsync --exclude=*gz -av $p/$PRI* $dest/$p; rsync -av $p/README $dest/$p };
 
         _runs( $cmd );
     }
@@ -426,8 +425,8 @@ END
 # this is a comment
 #
 * 
-! .apriori
-.apriori/LOG.gz
+! $PRI
+$PRI/LOG.gz
 ! .gitignore
 
 END
