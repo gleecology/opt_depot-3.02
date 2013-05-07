@@ -376,7 +376,7 @@ cd \$DEST/src
     # do you need to get the source? 
     #
     if [ ! -f \$SRC ]; then 
-        wget http://example.com/\$SRC
+        wget $SRC_URL
     fi
 
     tar zxvf \$SRC
@@ -402,7 +402,7 @@ cd \$DEST/src
     cd \$DEST
 
     # clean up 
-    rm -rf \$DEST/src/
+    # rm -rf \$DEST/src/*
 END
 }
 
