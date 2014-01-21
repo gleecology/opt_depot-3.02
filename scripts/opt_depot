@@ -1351,7 +1351,7 @@ sub link_me {
   # make recursive call to link_me if necessary..
   #
 
-  if (!defined %pack_hash || (!defined $switches{'r'} && !defined $switches{'R'})) {
+  if (!%pack_hash || (!defined $switches{'r'} && !defined $switches{'R'})) {
     return;
   }
 
